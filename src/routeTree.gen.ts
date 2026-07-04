@@ -12,9 +12,11 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as GenerosRouteImport } from './routes/generos'
 import { Route as CatalogoRouteImport } from './routes/catalogo'
 import { Route as BuscarRouteImport } from './routes/buscar'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as GeneroSlugRouteImport } from './routes/genero.$slug'
 import { Route as AnimeIdRouteImport } from './routes/anime.$id'
+import { Route as AnimeRouteImport } from './routes/anime.'
 import { Route as VerIdEpisodeIdRouteImport } from './routes/ver.$id.$episodeId'
 
 const GenerosRoute = GenerosRouteImport.update({
@@ -32,6 +34,11 @@ const BuscarRoute = BuscarRouteImport.update({
   path: '/buscar',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -47,6 +54,11 @@ const AnimeIdRoute = AnimeIdRouteImport.update({
   path: '/anime/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AnimeRoute = AnimeRouteImport.update({
+  id: '/anime/',
+  path: '/anime/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const VerIdEpisodeIdRoute = VerIdEpisodeIdRouteImport.update({
   id: '/ver/$id/$episodeId',
   path: '/ver/$id/$episodeId',
@@ -55,18 +67,22 @@ const VerIdEpisodeIdRoute = VerIdEpisodeIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/buscar': typeof BuscarRoute
   '/catalogo': typeof CatalogoRoute
   '/generos': typeof GenerosRoute
+  '/anime/': typeof AnimeRoute
   '/anime/$id': typeof AnimeIdRoute
   '/genero/$slug': typeof GeneroSlugRoute
   '/ver/$id/$episodeId': typeof VerIdEpisodeIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/buscar': typeof BuscarRoute
   '/catalogo': typeof CatalogoRoute
   '/generos': typeof GenerosRoute
+  '/anime': typeof AnimeRoute
   '/anime/$id': typeof AnimeIdRoute
   '/genero/$slug': typeof GeneroSlugRoute
   '/ver/$id/$episodeId': typeof VerIdEpisodeIdRoute
@@ -74,9 +90,11 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/buscar': typeof BuscarRoute
   '/catalogo': typeof CatalogoRoute
   '/generos': typeof GenerosRoute
+  '/anime/': typeof AnimeRoute
   '/anime/$id': typeof AnimeIdRoute
   '/genero/$slug': typeof GeneroSlugRoute
   '/ver/$id/$episodeId': typeof VerIdEpisodeIdRoute
@@ -85,27 +103,33 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/admin'
     | '/buscar'
     | '/catalogo'
     | '/generos'
+    | '/anime/'
     | '/anime/$id'
     | '/genero/$slug'
     | '/ver/$id/$episodeId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/admin'
     | '/buscar'
     | '/catalogo'
     | '/generos'
+    | '/anime'
     | '/anime/$id'
     | '/genero/$slug'
     | '/ver/$id/$episodeId'
   id:
     | '__root__'
     | '/'
+    | '/admin'
     | '/buscar'
     | '/catalogo'
     | '/generos'
+    | '/anime/'
     | '/anime/$id'
     | '/genero/$slug'
     | '/ver/$id/$episodeId'
@@ -113,9 +137,11 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdminRoute: typeof AdminRoute
   BuscarRoute: typeof BuscarRoute
   CatalogoRoute: typeof CatalogoRoute
   GenerosRoute: typeof GenerosRoute
+  AnimeRoute: typeof AnimeRoute
   AnimeIdRoute: typeof AnimeIdRoute
   GeneroSlugRoute: typeof GeneroSlugRoute
   VerIdEpisodeIdRoute: typeof VerIdEpisodeIdRoute
@@ -144,6 +170,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BuscarRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -165,6 +198,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AnimeIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/anime/': {
+      id: '/anime/'
+      path: '/anime'
+      fullPath: '/anime/'
+      preLoaderRoute: typeof AnimeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/ver/$id/$episodeId': {
       id: '/ver/$id/$episodeId'
       path: '/ver/$id/$episodeId'
@@ -177,9 +217,11 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdminRoute: AdminRoute,
   BuscarRoute: BuscarRoute,
   CatalogoRoute: CatalogoRoute,
   GenerosRoute: GenerosRoute,
+  AnimeRoute: AnimeRoute,
   AnimeIdRoute: AnimeIdRoute,
   GeneroSlugRoute: GeneroSlugRoute,
   VerIdEpisodeIdRoute: VerIdEpisodeIdRoute,

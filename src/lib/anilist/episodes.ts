@@ -3,11 +3,11 @@ import { request } from './client'
 import { ANIME_INFO_WITH_EPISODES_QUERY } from './queries'
 import { mapToAnimeInfo } from './mapper'
 import { cache } from './cache'
-import { cleanDescription, translateEpisodeTitle } from '../translations'
-import type { AnimeFullInfo, EpisodeDetails, Season } from './types'
+import { cleanDescription } from '../translations'
+import { calculateSeasons, organizeEpisodesBySeasons } from './seasons'
+import type { AnimeFullInfo, EpisodeDetails, SeasonInfo } from './types'
 
-// Función para generar episodios con descripciones en español
-function generateEpisodes(animeId: number, totalEpisodes: number, animeTitle: string): EpisodeDetails[] {
+function generateEpisodes(totalEpisodes: number, animeTitle: string): EpisodeDetails[] {
     const episodes: EpisodeDetails[] = []
     for (let i = 1; i <= totalEpisodes; i++) {
         let description = ''
@@ -46,16 +46,13 @@ export async function getAnimeWithEpisodes(id: number): Promise<AnimeFullInfo> {
         const baseInfo = mapToAnimeInfo(media)
         
         const totalEpisodes = media.episodes || 12
-        const episodes = generateEpisodes(id, totalEpisodes, baseInfo.title)
+        const episodes = generateEpisodes(totalEpisodes, baseInfo.title)
         
-        const seasons: Season[] = [
-            {
-                id: 1,
-                name: 'Temporada 1',
-                seasonNumber: 1,
-                episodes: episodes,
-            }
-        ]
+        // Organizar episodios por temporadas
+        const seasons = calculateSeasons(totalEpisodes, baseInfo.title)
+        
+        // Verificar si tiene múltiples temporadas
+        const hasMultipleSeasons = seasons.length > 1
 
         const relations = media.relations?.edges?.map((edge: any) => {
             const title = edge.node.title.english || edge.node.title.romaji || edge.node.title.native || ''
@@ -76,6 +73,8 @@ export async function getAnimeWithEpisodes(id: number): Promise<AnimeFullInfo> {
                 timeUntilAiring: media.nextAiringEpisode.timeUntilAiring,
             } : null,
             relations,
+            hasMultipleSeasons,
+            totalSeasons: seasons.length,
         }
 
         cache.set(cacheKey, fullInfo, 30 * 60 * 1000)

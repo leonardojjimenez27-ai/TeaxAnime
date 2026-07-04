@@ -1,126 +1,8 @@
 // src/lib/anilist/types.ts
 
-// Tipos básicos que AniList devuelve
-export interface AniListTitle {
-    romaji: string;
-    english: string | null;
-    native: string;
-}
+// ... (todos los tipos existentes)
 
-export interface AniListCoverImage {
-    extraLarge: string;
-    large: string;
-    medium: string;
-    color?: string;
-}
-
-export interface AniListMedia {
-    id: number;
-    title: AniListTitle;
-    coverImage: AniListCoverImage;
-    bannerImage: string | null;
-    episodes: number | null;
-    genres: string[];
-    averageScore: number | null;
-    description: string | null;
-    status: string;
-    season: string | null;
-    seasonYear: number | null;
-    format: string;
-    duration: number | null;
-    popularity: number;
-    favourites: number;
-    trending: number;
-    studios?: {
-        nodes: Array<{ name: string }>;
-    };
-    characters?: {
-        nodes: Array<{
-            id: number;
-            name: { full: string };
-            image: { large: string };
-            gender?: string;
-        }>;
-    };
-}
-
-// Tipos que usaremos en nuestra aplicación (compatibles con los antiguos)
-export interface AnimeResult {
-    id: number;
-    title: string;
-    image: string;
-    cover?: string;
-    episodes?: number | null;
-    genres: string[];
-    rating?: number | null;
-    year?: number | null;
-    color?: string;
-    bannerImage?: string | null;
-    averageScore?: number | null;
-    popularity?: number;
-    favourites?: number;
-    status?: string;
-    format?: string;
-    duration?: number | null;
-}
-
-export interface AnimeInfo extends AnimeResult {
-    description: string | null;
-    studios: string[];
-    characters: Character[];
-    status?: string;
-    season?: string | null;
-    format?: string;
-    duration?: number | null;
-}
-
-export interface Character {
-    id: number;
-    name: string;
-    image: string;
-    role: string;
-}
-
-export interface Episode {
-    id: string;
-    number: number;
-    title: string | null;
-    thumbnail: string | null;
-    aired: string | null;
-}
-
-export interface PageInfo {
-    total: number;
-    currentPage: number;
-    lastPage: number;
-    hasNextPage: boolean;
-    perPage: number;
-}
-
-export interface SearchResult {
-    results: AnimeResult[];
-    pageInfo: PageInfo;
-}
-
-// Para el reproductor
-export interface StreamSource {
-    url: string;
-    quality: string;
-    isM3U8: boolean;
-}
-
-export interface StreamSubtitle {
-    url: string;
-    lang: string;
-}
-
-// Constantes
-export const ANIME_GENRES = [
-    'Action', 'Adventure', 'Comedy', 'Drama', 'Ecchi', 'Fantasy', 
-    'Horror', 'Mecha', 'Music', 'Mystery', 'Psychological', 'Romance', 
-    'Sci-Fi', 'Slice of Life', 'Sports', 'Supernatural', 'Thriller'
-];
-
+// Añadir estas constantes al final del archivo
 export const GENRE_ES: Record<string, string> = {
     'Action': 'Acción',
     'Adventure': 'Aventura',
@@ -141,13 +23,11 @@ export const GENRE_ES: Record<string, string> = {
     'Thriller': 'Suspenso'
 };
 
-// Funciones de utilidad
-export function getTitle(media: AniListMedia | AnimeResult): string {
-    if ('title' in media && typeof media.title === 'object') {
-        return media.title.english || media.title.romaji || media.title.native || '';
-    }
-    return media.title || '';
-}
+export const ANIME_GENRES = [
+    'Action', 'Adventure', 'Comedy', 'Drama', 'Ecchi', 'Fantasy', 
+    'Horror', 'Mecha', 'Music', 'Mystery', 'Psychological', 'Romance', 
+    'Sci-Fi', 'Slice of Life', 'Sports', 'Supernatural', 'Thriller'
+];
 
 export function slugifyGenre(genre: string): string {
     return genre.toLowerCase().replace(/\s+/g, '-');
@@ -174,40 +54,4 @@ export function genreFromSlug(slug: string): string {
         'suspenso': 'Thriller'
     };
     return map[slug] || slug;
-}
-
-// src/lib/anilist/types.ts
-
-// ... (mantén los tipos existentes)
-
-export interface EpisodeDetails {
-    id: number;
-    title: string | null;
-    number: number;
-    description: string | null;
-    thumbnail: string | null;
-    airDate: string | null;
-    duration: number | null;
-}
-
-export interface Season {
-    id: number;
-    name: string;
-    seasonNumber: number;
-    episodes: EpisodeDetails[];
-}
-
-export interface AnimeFullInfo extends AnimeInfo {
-    episodes: EpisodeDetails[];
-    seasons: Season[];
-    nextAiring: {
-        episode: number;
-        timeUntilAiring: number;
-    } | null;
-    relations: {
-        id: number;
-        title: string;
-        image: string;
-        relationType: string;
-    }[];
 }

@@ -6,4 +6,9 @@ export { cache } from './cache'
 export { mapToAnimeResult, mapToAnimeInfo } from './mapper'
 export { animeApi } from './api'
 export { getAnimeWithEpisodes } from './episodes'
+
+// Exportar funciones de utilidad
+export { getTitle } from './mapper'
+
+// Exportación por defecto
 export { animeApi as default } from './api'

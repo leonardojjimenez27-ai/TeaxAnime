@@ -34,7 +34,6 @@ query Trending($page: Int = 1, $perPage: Int = 20) {
             duration
             popularity
             favourites
-            description(asHtml: false)
         }
     }
 }
@@ -74,7 +73,6 @@ query Popular($page: Int = 1, $perPage: Int = 20) {
             duration
             popularity
             favourites
-            description(asHtml: false)
         }
     }
 }
@@ -114,7 +112,6 @@ query Search($page: Int = 1, $perPage: Int = 20, $search: String) {
             duration
             popularity
             favourites
-            description(asHtml: false)
         }
     }
 }
@@ -139,7 +136,7 @@ query AnimeInfo($id: Int) {
         episodes
         genres
         averageScore
-        description(asHtml: false)
+        description
         status
         season
         seasonYear
@@ -202,7 +199,6 @@ query Season($page: Int = 1, $perPage: Int = 20, $season: MediaSeason, $seasonYe
             duration
             popularity
             favourites
-            description(asHtml: false)
         }
     }
 }
@@ -242,7 +238,6 @@ query Genre($page: Int = 1, $perPage: Int = 20, $genre: String) {
             duration
             popularity
             favourites
-            description(asHtml: false)
         }
     }
 }
@@ -267,7 +262,7 @@ query AnimeInfoWithEpisodes($id: Int) {
         episodes
         genres
         averageScore
-        description(asHtml: false)
+        description
         status
         season
         seasonYear
