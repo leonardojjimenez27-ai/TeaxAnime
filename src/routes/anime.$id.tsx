@@ -3,6 +3,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { useState, useEffect } from 'react'
 import { GENRE_ES } from '@/lib/anilist'
 import { cleanDescription } from '@/lib/translator'
+import { getFamilyEpisodes, getMainAnimeId, groupTokensByFamily, getAnimeFamily, getAllMushokuEpisodes, getAllFamilyEpisodesRenumbered } from '@/lib/anime/season-grouping'
 
 // ============================================================
 // FUNCIONES DINÁMICAS PARA DETECTAR TEMPORADAS
@@ -256,29 +257,188 @@ async function getAnimeInfo(id: number) {
     
     let seasons: { key: string; episodeCount: number }[] = [];
     let totalEpisodes = 0;
+    let totalEpisodesFromTokens = 0;
     
-    // 1. localStorage (tokens del usuario)
-    const localStorageSeasons = detectSeasons(title);
-    const localStorageEpisodes = getTotalEpisodes(localStorageSeasons);
+    // ============================================================
+    // 🔥 DETECCIÓN DE TEMPORADA POR ID (CON AGRUPACIÓN DE PARTES)
+    // ============================================================
     
-    if (localStorageSeasons.length > 0) {
-        seasons = localStorageSeasons;
-        totalEpisodes = localStorageEpisodes;
-        console.log(`✅ Usando temporadas de localStorage: ${seasons.length}, episodios: ${totalEpisodes}`);
+    const tokens = loadTokens();
+    let targetSlugs: string[] = [];
+    
+    // Mapeo de IDs de AniList a slugs (agrupando partes)
+    const mushokuIdToSlug: Record<string, string[]> = {
+        // Temporada 1 (ID: 108465) - 23 episodios
+        '108465': [
+            'mushoku-tensei-isekai-ittara-honki-dasu',
+            'mushoku-tensei-isekai-ittara-honki-dasu-part-2',
+        ],
+        // Temporada 2 (ID: 146065) - 24 episodios
+        '146065': [
+            'mushoku-tensei-ii-isekai-ittara-honki-dasu',
+            'mushoku-tensei-ii-isekai-ittara-honki-dasu-part-2',
+        ],
+        // Temporada 3 (ID: 178789) - 2 episodios
+        '178789': [
+            'mushoku-tensei-isekai-ittara-honki-dasu-3',
+        ],
+    };
+    
+    // ============================================================
+    // 🔥 MAPEO DE IDs PARA FULLMETAL ALCHEMIST
+    // ============================================================
+    
+    const fmaIdToSlug: Record<string, string> = {
+        'ID_FMA_2003': 'fullmetal-alchemist',        // 51 episodios
+        'ID_FMA_BROTHERHOOD': 'fullmetal-alchemist-brotherhood', // 64 episodios
+    };
+    
+    // 1. Si es Fullmetal Alchemist, usar el mapeo específico
+    if (title.toLowerCase().includes('fullmetal alchemist')) {
+        const targetSlug = fmaIdToSlug[String(id)];
+        if (targetSlug && tokens[targetSlug]) {
+            const episodes = tokens[targetSlug];
+            const episodeCount = Object.keys(episodes).length;
+            totalEpisodesFromTokens = episodeCount;
+            seasons = [{ key: 'all-episodes', episodeCount: episodeCount }];
+            totalEpisodes = episodeCount;
+            console.log(`✅ Usando token "${targetSlug}": ${episodeCount} episodios`);
+            console.log(`📊 Episodios: ${Object.keys(episodes).map(Number).sort((a,b) => a-b).join(', ')}`);
+        } else {
+            // Si no se encuentra el token, usar la lógica original
+            console.log('ℹ️ No se encontró token para Fullmetal Alchemist, usando lógica original...');
+            const localStorageSeasons = detectSeasons(title);
+            const localStorageEpisodes = getTotalEpisodes(localStorageSeasons);
+            
+            if (localStorageSeasons.length > 0) {
+                seasons = localStorageSeasons;
+                totalEpisodes = localStorageEpisodes;
+                console.log(`✅ Usando temporadas de localStorage: ${seasons.length}, episodios: ${totalEpisodes}`);
+            } else {
+                let episodes = getKnownEpisodes(title);
+                if (episodes === 0) {
+                    episodes = media.episodes || 12;
+                }
+                if (episodes === 0) {
+                    episodes = 12;
+                }
+                seasons = [{ key: 'all-episodes', episodeCount: episodes }];
+                totalEpisodes = episodes;
+                console.log(`✅ Usando una sola temporada con ${totalEpisodes} episodios`);
+            }
+        }
     }
-    
-    // 2. Si no hay temporadas, usar mapa conocido o AniList
-    if (seasons.length === 0) {
-        let episodes = getKnownEpisodes(title);
-        if (episodes === 0) {
-            episodes = media.episodes || 12;
+    // 2. Si es Mushoku Tensei, usar el mapeo específico
+    else if (title.toLowerCase().includes('mushoku')) {
+        // Intentar obtener los slugs por ID de AniList
+        if (mushokuIdToSlug[String(id)]) {
+            targetSlugs = mushokuIdToSlug[String(id)];
+            console.log(`🔍 Usando slugs por ID: ${targetSlugs.join(', ')}`);
+        } else {
+            // Si no hay mapeo, buscar por coincidencia con el título
+            const clean = cleanTitle(title);
+            for (const [slug, episodes] of Object.entries(tokens)) {
+                if (slug.includes(clean) || clean.includes(slug)) {
+                    targetSlugs = [slug];
+                    console.log(`🔍 Usando slug por coincidencia: "${slug}"`);
+                    break;
+                }
+            }
         }
-        if (episodes === 0) {
-            episodes = 12;
+        
+        // Si encontramos slugs y tienen episodios, combinarlos CON RENUMERACIÓN
+        if (targetSlugs.length > 0) {
+            const allEpisodes: Record<number, string> = {};
+            let episodeCounter = 1;
+            
+            for (const slug of targetSlugs) {
+                if (tokens[slug]) {
+                    const episodes = tokens[slug];
+                    const episodeNumbers = Object.keys(episodes).map(Number).sort((a, b) => a - b);
+                    console.log(`📺 "${slug}": ${episodeNumbers.length} episodios (${episodeNumbers.join(', ')})`);
+                    
+                    // Renumerar secuencialmente
+                    for (const epNum of episodeNumbers) {
+                        allEpisodes[episodeCounter] = episodes[epNum];
+                        console.log(`   Episodio ${epNum} → ${episodeCounter}`);
+                        episodeCounter++;
+                    }
+                }
+            }
+            
+            const episodeCount = Object.keys(allEpisodes).length;
+            if (episodeCount > 0) {
+                totalEpisodesFromTokens = episodeCount;
+                seasons = [{ key: 'all-episodes', episodeCount: episodeCount }];
+                totalEpisodes = episodeCount;
+                console.log(`✅ Combinados ${targetSlugs.length} slugs con renumeración: ${episodeCount} episodios totales`);
+                console.log(`📊 Episodios: ${Object.keys(allEpisodes).map(Number).sort((a,b) => a-b).join(', ')}`);
+            }
         }
-        seasons = [{ key: 'all-episodes', episodeCount: episodes }];
-        totalEpisodes = episodes;
-        console.log(`✅ Usando una sola temporada con ${totalEpisodes} episodios`);
+        
+        // Si no se encontraron episodios, usar la lógica original
+        if (seasons.length === 0) {
+            console.log('ℹ️ No se encontraron episodios, usando lógica original...');
+            const localStorageSeasons = detectSeasons(title);
+            const localStorageEpisodes = getTotalEpisodes(localStorageSeasons);
+            
+            if (localStorageSeasons.length > 0) {
+                seasons = localStorageSeasons;
+                totalEpisodes = localStorageEpisodes;
+                console.log(`✅ Usando temporadas de localStorage: ${seasons.length}, episodios: ${totalEpisodes}`);
+            } else {
+                let episodes = getKnownEpisodes(title);
+                if (episodes === 0) {
+                    episodes = media.episodes || 12;
+                }
+                if (episodes === 0) {
+                    episodes = 12;
+                }
+                seasons = [{ key: 'all-episodes', episodeCount: episodes }];
+                totalEpisodes = episodes;
+                console.log(`✅ Usando una sola temporada con ${totalEpisodes} episodios`);
+            }
+        }
+    }
+    // 3. Si no hay mapeo específico, usar la lógica original
+    else {
+        console.log('ℹ️ Usando lógica original para otros animes...');
+        
+        // Si hay tokens, intentar renumerar todos los episodios
+        if (Object.keys(tokens).length > 0) {
+            const result = getAllFamilyEpisodesRenumbered(tokens, title);
+            
+            if (result.total > 0) {
+                totalEpisodesFromTokens = result.total;
+                seasons = [{ key: 'all-episodes', episodeCount: result.total }];
+                totalEpisodes = result.total;
+                console.log(`✅ Renumerados ${result.total} episodios de todas las temporadas`);
+                console.log(`📂 Slugs usados:`, result.slugs);
+            }
+        }
+        
+        // Si no se encontraron episodios renumerados, usar la lógica original
+        if (seasons.length === 0) {
+            const localStorageSeasons = detectSeasons(title);
+            const localStorageEpisodes = getTotalEpisodes(localStorageSeasons);
+            
+            if (localStorageSeasons.length > 0) {
+                seasons = localStorageSeasons;
+                totalEpisodes = localStorageEpisodes;
+                console.log(`✅ Usando temporadas de localStorage: ${seasons.length}, episodios: ${totalEpisodes}`);
+            } else {
+                let episodes = getKnownEpisodes(title);
+                if (episodes === 0) {
+                    episodes = media.episodes || 12;
+                }
+                if (episodes === 0) {
+                    episodes = 12;
+                }
+                seasons = [{ key: 'all-episodes', episodeCount: episodes }];
+                totalEpisodes = episodes;
+                console.log(`✅ Usando una sola temporada con ${totalEpisodes} episodios`);
+            }
+        }
     }
     
     console.log(`📊 "${title}" - Temporadas: ${seasons.length}, Episodios: ${totalEpisodes}`);
@@ -292,6 +452,7 @@ async function getAnimeInfo(id: number) {
         bannerImage: media.bannerImage,
         episodes: media.episodes || 0,
         totalEpisodes: totalEpisodes,
+        totalEpisodesFromTokens: totalEpisodesFromTokens,
         genres: media.genres || [],
         averageScore: media.averageScore,
         description: description,
@@ -331,6 +492,7 @@ function AnimeDetailComponent() {
                 console.log('✅ Anime cargado:', data.title)
                 console.log('📊 Temporadas:', data.seasons?.length || 0)
                 console.log('📊 Episodios totales:', data.totalEpisodes)
+                console.log(`📊 Episodios desde tokens: ${data.totalEpisodesFromTokens || 0}`)
                 setAnime(data)
             } catch (err) {
                 console.error('❌ Error:', err)
@@ -546,6 +708,14 @@ function AnimeDetailComponent() {
                         )}
                     </div>
 
+                    {anime.totalEpisodesFromTokens > 0 && (
+                        <div className="mt-2 mb-4">
+                            <span className="text-xs bg-green-900/50 text-green-400 px-3 py-1 rounded-full">
+                                ✅ {anime.totalEpisodesFromTokens} episodios extraídos de VerAnimeOnline
+                            </span>
+                        </div>
+                    )}
+
                     {anime.description && (
                         <div className="mt-4">
                             <h2 className="text-xl font-semibold mb-2">📖 Sinopsis</h2>
@@ -563,7 +733,7 @@ function AnimeDetailComponent() {
             </div>
 
             {/* ============================================================ */}
-            {/* LISTA DE EPISODIOS - SIN MINIATURAS */}
+            {/* LISTA DE EPISODIOS */}
             {/* ============================================================ */}
             <div className="mt-8" id="episode-list">
                 <h2 className="text-2xl font-bold mb-4">
@@ -574,9 +744,13 @@ function AnimeDetailComponent() {
                             ({anime.seasons.length} temporadas)
                         </span>
                     )}
+                    {anime.totalEpisodesFromTokens > 0 && (
+                        <span className="text-xs text-green-400 ml-2">
+                            ✅ Extraídos
+                        </span>
+                    )}
                 </h2>
                 
-                {/* Selector de temporadas */}
                 {hasSeasons && seasons.length > 0 && (
                     <div className="flex gap-2 mb-4 flex-wrap overflow-x-auto pb-2">
                         {seasons.map((season: any, index: number) => {
@@ -606,7 +780,6 @@ function AnimeDetailComponent() {
                     </div>
                 )}
 
-                {/* Información de página */}
                 <div className="flex justify-between items-center mb-3">
                     <span className="text-sm text-gray-400">
                         Mostrando episodios {startIndex + 1} - {endIndex} de {episodeList.length}
@@ -654,7 +827,6 @@ function AnimeDetailComponent() {
                     </div>
                 </div>
 
-                {/* Grid de episodios - SIN MINIATURAS */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
                     {paginatedEpisodes.map((num: number) => (
                         <Link
@@ -681,7 +853,6 @@ function AnimeDetailComponent() {
                     ))}
                 </div>
 
-                {/* Paginación inferior */}
                 {totalPages > 1 && (
                     <div className="flex justify-center gap-2 mt-4">
                         <button

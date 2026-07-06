@@ -13,6 +13,7 @@ import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { SiteHeader } from "../components/site-header";
 import { SiteFooter } from "../components/site-footer";
+import { updateFamiliesFromTokens } from "../lib/anime/season-grouping";
 
 function NotFoundComponent() {
   return (
@@ -142,6 +143,19 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+
+  // ============================================================
+  // 🔥 PASO 3: DETECCIÓN AUTOMÁTICA DE TEMPORADAS
+  // ============================================================
+  useEffect(() => {
+    // Detectar y crear familias automáticamente
+    try {
+      updateFamiliesFromTokens();
+      console.log('🔄 Detección automática de temporadas completada');
+    } catch (error) {
+      console.warn('⚠️ Error en detección automática:', error);
+    }
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>

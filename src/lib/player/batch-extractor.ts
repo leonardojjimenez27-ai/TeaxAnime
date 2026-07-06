@@ -1,4 +1,5 @@
 // src/lib/player/batch-extractor.ts
+import { saveTokensWithBackup } from '@/lib/tokens/tokens-manager';
 
 // Función para extraer todos los episodios de un anime
 export async function extractAllEpisodes(animeTitle: string, totalEpisodes: number): Promise<{ episode: number; url: string | null }[]> {
@@ -84,7 +85,9 @@ export async function extractAllEpisodes(animeTitle: string, totalEpisodes: numb
     return results;
 }
 
-// Función para guardar los tokens encontrados
+// ============================================================
+// FUNCIÓN PARA GUARDAR TOKENS (CON BACKUP AUTOMÁTICO)
+// ============================================================
 export function saveTokensToLocalStorage(animeTitle: string, results: { episode: number; url: string | null }[]): void {
     const cleanTitle = animeTitle
         .toLowerCase()
@@ -102,16 +105,29 @@ export function saveTokensToLocalStorage(animeTitle: string, results: { episode:
         tokens[cleanTitle] = {};
     }
     
-    // Agregar nuevos tokens
+    // Agregar nuevos tokens y rastrear cuáles son nuevos
+    const newTokens: Record<number, string> = {};
     for (const result of results) {
         if (result.url) {
+            // Si el episodio no existe, es nuevo
+            if (!tokens[cleanTitle][result.episode]) {
+                newTokens[result.episode] = result.url;
+            }
             tokens[cleanTitle][result.episode] = result.url;
         }
     }
     
-    // Guardar
+    // Guardar en localStorage
     localStorage.setItem('blogger_tokens', JSON.stringify(tokens));
     console.log(`💾 Tokens guardados en localStorage para ${animeTitle}`);
+    
+    // 🔥 GUARDAR BACKUP AUTOMÁTICO EN JSON E INDEXEDDB
+    if (Object.keys(newTokens).length > 0) {
+        saveTokensWithBackup(cleanTitle, newTokens);
+        console.log(`📦 Backup guardado para ${cleanTitle} (${Object.keys(newTokens).length} episodios nuevos)`);
+    } else {
+        console.log(`ℹ️ No hay episodios nuevos para ${cleanTitle}, no se necesita backup`);
+    }
 }
 
 // Función para exportar tokens como código

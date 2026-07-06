@@ -2,6 +2,7 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useState, useEffect } from 'react'
 import { animeApi } from '@/lib/anilist'
+import { getFamilyEpisodes, groupTokensByFamily, getAnimeFamily } from '@/lib/anime/season-grouping'
 
 // ============================================================
 // FUNCIONES DINÁMICAS PARA DETECTAR TEMPORADAS
@@ -32,12 +33,275 @@ function cleanTitle(title: string): string {
         .replace(/^-|-$/g, '');
 }
 
-// Función para detectar temporadas automáticamente
-function detectSeasons(animeTitle: string): { key: string; episodeCount: number }[] {
+// ============================================================
+// 🔥 MAPEO DE MUSHOKU TENSEI PARA LA PÁGINA DE REPRODUCCIÓN
+// ============================================================
+
+function getMushokuSlugsForId(animeId: string): string[] {
+    const mushokuMap: Record<string, string[]> = {
+        '108465': [
+            'mushoku-tensei-isekai-ittara-honki-dasu',
+            'mushoku-tensei-isekai-ittara-honki-dasu-part-2',
+        ],
+        '146065': [
+            'mushoku-tensei-ii-isekai-ittara-honki-dasu',
+            'mushoku-tensei-ii-isekai-ittara-honki-dasu-part-2',
+        ],
+        '178789': [
+            'mushoku-tensei-isekai-ittara-honki-dasu-3',
+        ],
+    };
+    return mushokuMap[animeId] || [];
+}
+
+function getTotalEpisodesForMushoku(animeId: string): number {
+    const tokens = loadTokens();
+    const slugs = getMushokuSlugsForId(animeId);
+    let total = 0;
+    for (const slug of slugs) {
+        if (tokens[slug]) {
+            total += Object.keys(tokens[slug]).length;
+        }
+    }
+    return total;
+}
+
+function getSeasonKeyForEpisodeMushoku(animeId: string, episodeNum: number): { key: string; relativeEpisode: number; seasonIndex: number } {
+    const tokens = loadTokens();
+    const slugs = getMushokuSlugsForId(animeId);
+    let accumulated = 0;
+    for (let i = 0; i < slugs.length; i++) {
+        const slug = slugs[i];
+        if (tokens[slug]) {
+            const episodeCount = Object.keys(tokens[slug]).length;
+            if (episodeNum <= accumulated + episodeCount) {
+                return {
+                    key: slug,
+                    relativeEpisode: episodeNum - accumulated,
+                    seasonIndex: i
+                };
+            }
+            accumulated += episodeCount;
+        }
+    }
+    return { key: '', relativeEpisode: episodeNum, seasonIndex: 0 };
+}
+
+// ============================================================
+// 🔥 FUNCIÓN PARA OBTENER URL DE EPISODIO (CON RANGOS DE EPISODIOS)
+// ============================================================
+
+function getEpisodeUrl(animeTitle: string, episodeId: string, animeId?: string): string | null {
+    // 1. Cargar tokens
+    const tokens = loadTokens();
+    if (!tokens || Object.keys(tokens).length === 0) {
+        console.log('❌ No hay tokens en localStorage');
+        return null;
+    }
+    
+    const episodeNum = Number(episodeId);
+    console.log(`🔍 Buscando episodio ${episodeNum} para "${animeTitle}" (ID: ${animeId || 'N/A'})...`);
+    
+    // ============================================================
+    // 1. PRIMERO: Buscar en el token EXACTO del anime actual
+    // ============================================================
+    const clean = cleanTitle(animeTitle);
+    const variants = [
+        clean,
+        animeTitle.toLowerCase().replace(/\s+/g, '-'),
+        animeTitle.toLowerCase().replace(/\s+/g, '_'),
+    ];
+    
+    for (const variant of variants) {
+        if (tokens[variant] && tokens[variant][episodeNum]) {
+            console.log(`✅ Encontrado en el token exacto: "${variant}"`);
+            return tokens[variant][episodeNum];
+        }
+    }
+    
+    // ============================================================
+    // 🔥 2. SEGUNDO: Buscar por ID de AniList (CON RANGOS DE EPISODIOS)
+    // ============================================================
+    if (animeId) {
+        // Mapeo de IDs de AniList a slugs y sus rangos de episodios
+        const idToSlug: Record<string, { slug: string; startEpisode: number; endEpisode: number }[]> = {
+            // ============================================================
+            // 🔥 MUSHOKU TENSEI (TODAS LAS TEMPORADAS)
+            // ============================================================
+            '108465': [
+                { slug: 'mushoku-tensei-isekai-ittara-honki-dasu', startEpisode: 1, endEpisode: 11 },
+                { slug: 'mushoku-tensei-isekai-ittara-honki-dasu-part-2', startEpisode: 12, endEpisode: 23 },
+            ],
+            '146065': [
+                { slug: 'mushoku-tensei-ii-isekai-ittara-honki-dasu', startEpisode: 1, endEpisode: 12 },
+                { slug: 'mushoku-tensei-ii-isekai-ittara-honki-dasu-part-2', startEpisode: 13, endEpisode: 24 },
+            ],
+            '178789': [
+                { slug: 'mushoku-tensei-isekai-ittara-honki-dasu-3', startEpisode: 1, endEpisode: 2 },
+            ],
+            // ============================================================
+            // SOLO LEVELING
+            // ============================================================
+            '151960': [
+                { slug: 'solo-leveling', startEpisode: 1, endEpisode: 12 },
+            ],
+            '176496': [
+                { slug: 'solo-leveling-season-2', startEpisode: 1, endEpisode: 13 },
+            ],
+            // ============================================================
+            // KAIJU NO. 8
+            // ============================================================
+            '158930': [
+                { slug: 'kaiju-no-8', startEpisode: 1, endEpisode: 13 },
+            ],
+            '160195': [
+                { slug: 'kaiju-no-8-season-2', startEpisode: 1, endEpisode: 11 },
+            ],
+            // ============================================================
+            // JUJUTSU KAISEN
+            // ============================================================
+            '48549': [
+                { slug: 'jujutsu-kaisen', startEpisode: 1, endEpisode: 24 },
+            ],
+            // ============================================================
+            // ATTACK ON TITAN
+            // ============================================================
+            '16498': [
+                { slug: 'attack-on-titan', startEpisode: 1, endEpisode: 25 },
+            ],
+            // ============================================================
+            // FULLMETAL ALCHEMIST
+            // ============================================================
+            'ID_FMA_2003': [
+                { slug: 'fullmetal-alchemist', startEpisode: 1, endEpisode: 51 },
+            ],
+            'ID_FMA_BROTHERHOOD': [
+                { slug: 'fullmetal-alchemist-brotherhood', startEpisode: 1, endEpisode: 64 },
+            ],
+        };
+        
+        const slugMappings = idToSlug[animeId];
+        if (slugMappings && slugMappings.length > 0) {
+            console.log(`🔍 Buscando en slugs mapeados por ID: ${slugMappings.map(m => m.slug).join(', ')}`);
+            
+            // Encontrar en qué rango está el episodio
+            let targetSlug = '';
+            let relativeEpisode = episodeNum;
+            
+            for (const mapping of slugMappings) {
+                if (episodeNum >= mapping.startEpisode && episodeNum <= mapping.endEpisode) {
+                    targetSlug = mapping.slug;
+                    relativeEpisode = episodeNum - mapping.startEpisode + 1;
+                    console.log(`📺 Episodio ${episodeNum} → "${targetSlug}" (episodio original: ${relativeEpisode})`);
+                    break;
+                }
+            }
+            
+            if (targetSlug && tokens[targetSlug] && tokens[targetSlug][relativeEpisode]) {
+                console.log(`✅ Encontrado por ID de AniList en "${targetSlug}" (original: ${relativeEpisode})`);
+                return tokens[targetSlug][relativeEpisode];
+            } else {
+                console.log(`⚠️ No se encontró el episodio ${relativeEpisode} en "${targetSlug}"`);
+                // Intentar buscar con el número original en todos los slugs mapeados
+                for (const mapping of slugMappings) {
+                    if (tokens[mapping.slug] && tokens[mapping.slug][episodeNum]) {
+                        console.log(`⚠️ Encontrado en "${mapping.slug}" con el número original ${episodeNum}`);
+                        return tokens[mapping.slug][episodeNum];
+                    }
+                }
+            }
+        } else {
+            console.log(`ℹ️ No hay mapeo para el ID: ${animeId}`);
+        }
+    }
+    
+    // ============================================================
+    // 3. TERCERO: Buscar en la familia del anime (si existe)
+    // ============================================================
+    const family = getAnimeFamily(animeTitle);
+    if (family) {
+        const grouped = groupTokensByFamily(tokens);
+        for (const [key, group] of Object.entries(grouped)) {
+            if (group.familyName === family.name) {
+                if (group.episodes[episodeNum]) {
+                    console.log(`✅ Encontrado en la familia "${family.name}"`);
+                    return group.episodes[episodeNum];
+                }
+            }
+        }
+    }
+    
+    // ============================================================
+    // 4. CUARTO: Buscar por coincidencia parcial con el título
+    // ============================================================
+    const searchTerms = [
+        clean,
+        animeTitle.toLowerCase().replace(/\s+/g, '-'),
+        animeTitle.toLowerCase().replace(/\s+/g, '_'),
+        animeTitle.toLowerCase().replace(/\s+/g, ''),
+    ];
+    
+    for (const term of searchTerms) {
+        for (const [slug, episodes] of Object.entries(tokens)) {
+            if (slug.includes(term) || term.includes(slug)) {
+                if (episodes[episodeNum]) {
+                    console.log(`✅ Encontrado en slug relacionado: "${slug}"`);
+                    return episodes[episodeNum];
+                }
+            }
+        }
+    }
+    
+    // ============================================================
+    // 5. QUINTO: Caso especial para Mushoku Tensei
+    // ============================================================
+    if (animeTitle.toLowerCase().includes('mushoku')) {
+        for (const [slug, episodes] of Object.entries(tokens)) {
+            if (slug.includes('mushoku') && episodes[episodeNum]) {
+                console.log(`✅ Encontrado en "${slug}" (búsqueda especial Mushoku)`);
+                return episodes[episodeNum];
+            }
+        }
+    }
+    
+    // ============================================================
+    // 6. ÚLTIMO RECURSO: Buscar en cualquier token (feature universal)
+    // ============================================================
+    for (const [slug, episodes] of Object.entries(tokens)) {
+        if (episodes[episodeNum]) {
+            console.log(`⚠️ Encontrado en otro anime: "${slug}" (búsqueda universal)`);
+            return episodes[episodeNum];
+        }
+    }
+    
+    console.log(`❌ No se encontró el episodio ${episodeNum} para "${animeTitle}"`);
+    return null;
+}
+
+// Función para detectar temporadas automáticamente (con soporte para Mushoku)
+function detectSeasons(animeTitle: string, animeId?: string): { key: string; episodeCount: number }[] {
     const tokens = loadTokens();
     const clean = cleanTitle(animeTitle);
     const seasons: { key: string; episodeCount: number }[] = [];
     
+    // 🔥 Si es Mushoku Tensei, usar el mapeo específico
+    if (animeId && animeTitle.toLowerCase().includes('mushoku')) {
+        const slugs = getMushokuSlugsForId(animeId);
+        for (const slug of slugs) {
+            if (tokens[slug]) {
+                const episodeCount = Object.keys(tokens[slug]).length;
+                if (episodeCount > 0) {
+                    seasons.push({ key: slug, episodeCount });
+                }
+            }
+        }
+        if (seasons.length > 0) {
+            console.log(`📊 Mushoku Tensei: ${seasons.length} temporadas detectadas por ID`);
+            return seasons;
+        }
+    }
+    
+    // Lógica original
     const variants = [
         clean,
         animeTitle.toLowerCase().replace(/\s+/g, '-'),
@@ -114,7 +378,15 @@ function getSeasonName(key: string, index: number): string {
     return `Temporada ${index + 1}`;
 }
 
-function getSeasonKeyForEpisode(episodeNum: number, seasons: { key: string; episodeCount: number }[]): { key: string; relativeEpisode: number; seasonIndex: number } {
+function getSeasonKeyForEpisode(episodeNum: number, seasons: { key: string; episodeCount: number }[], animeId?: string): { key: string; relativeEpisode: number; seasonIndex: number } {
+    // 🔥 Si es Mushoku Tensei, usar el mapeo específico
+    if (animeId && animeId !== '') {
+        const result = getSeasonKeyForEpisodeMushoku(animeId, episodeNum);
+        if (result.key) {
+            return result;
+        }
+    }
+    
     let accumulated = 0;
     for (let i = 0; i < seasons.length; i++) {
         const season = seasons[i];
@@ -167,56 +439,6 @@ function getKnownEpisodes(title: string): number {
 }
 
 // ============================================================
-// FUNCIÓN PARA BUSCAR TOKEN POR TÍTULO
-// ============================================================
-
-function findTokenForEpisode(animeTitle: string, episodeNum: number): string | null {
-    const tokens = loadTokens();
-    const titleLower = animeTitle.toLowerCase().trim();
-    const clean = cleanTitle(animeTitle);
-    
-    // Generar todas las variantes del título
-    const variants = [
-        clean,
-        titleLower.replace(/\s+/g, '-'),
-        titleLower.replace(/\s+/g, '_'),
-        titleLower.replace(/\s+/g, ''),
-        titleLower,
-    ];
-    
-    // Buscar en las temporadas detectadas
-    const seasons = detectSeasons(animeTitle);
-    const seasonData = getSeasonKeyForEpisode(episodeNum, seasons);
-    if (seasonData.key && tokens[seasonData.key]?.[seasonData.relativeEpisode]) {
-        return tokens[seasonData.key][seasonData.relativeEpisode];
-    }
-    
-    // Buscar por variantes del título
-    for (const variant of variants) {
-        // Buscar directamente en el token
-        if (tokens[variant]?.[episodeNum]) {
-            return tokens[variant][episodeNum];
-        }
-        // Buscar con sufijos de temporada (ej: variant-2, variant-3, etc.)
-        for (let i = 1; i <= 20; i++) {
-            const seasonKey = `${variant}-${i}`;
-            if (tokens[seasonKey]?.[episodeNum]) {
-                return tokens[seasonKey][episodeNum];
-            }
-        }
-        // Buscar con "season" en el nombre
-        for (let i = 1; i <= 20; i++) {
-            const seasonKey = `${variant}-season-${i}`;
-            if (tokens[seasonKey]?.[episodeNum]) {
-                return tokens[seasonKey][episodeNum];
-            }
-        }
-    }
-    
-    return null;
-}
-
-// ============================================================
 // COMPONENTE PRINCIPAL
 // ============================================================
 
@@ -243,18 +465,110 @@ function WatchComponent() {
         async function loadAnime() {
             try {
                 console.log('🔄 Cargando anime ID:', id);
-                const info = await animeApi.info(Number(id));
-                console.log('✅ Anime cargado:', info.title);
-                setAnime(info);
                 
-                // Detectar temporadas
-                const detectedSeasons = detectSeasons(info.title);
+                // 🔥 OBTENER DATOS DIRECTAMENTE DE ANILIST (sin caché corrupta)
+                const response = await fetch('/api/anilist', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        query: `
+                            query ($id: Int) {
+                                Media(id: $id, type: ANIME) {
+                                    id
+                                    title {
+                                        romaji
+                                        english
+                                        native
+                                    }
+                                    coverImage {
+                                        extraLarge
+                                        large
+                                        medium
+                                    }
+                                    bannerImage
+                                    episodes
+                                    genres
+                                    averageScore
+                                    description(asHtml: false)
+                                    status
+                                    seasonYear
+                                    format
+                                    duration
+                                    popularity
+                                    favourites
+                                    studios {
+                                        nodes {
+                                            name
+                                        }
+                                    }
+                                    externalLinks {
+                                        url
+                                        site
+                                        type
+                                    }
+                                }
+                            }
+                        `,
+                        variables: { id: Number(id) }
+                    })
+                });
+                const json = await response.json();
+                const info = json?.data?.Media;
+                
+                if (!info) {
+                    throw new Error('No se encontró el anime');
+                }
+                
+                console.log('✅ Anime cargado:', info.title.english || info.title.romaji);
+                console.log('📌 ID de AniList:', info.id);
+                
+                // Verificar si el ID coincide
+                if (info.id !== Number(id)) {
+                    console.warn(`⚠️ El ID devuelto (${info.id}) no coincide con el solicitado (${id})`);
+                }
+                
+                // Transformar datos al formato esperado
+                const animeData = {
+                    id: info.id,
+                    title: info.title.english || info.title.romaji || info.title.native || 'Sin título',
+                    image: info.coverImage?.extraLarge || info.coverImage?.large || '',
+                    bannerImage: info.bannerImage || '',
+                    episodes: info.episodes || 0,
+                    genres: info.genres || [],
+                    averageScore: info.averageScore || 0,
+                    description: info.description || '',
+                    status: info.status || 'UNKNOWN',
+                    seasonYear: info.seasonYear || 0,
+                    format: info.format || 'TV',
+                    duration: info.duration || 0,
+                    popularity: info.popularity || 0,
+                    favourites: info.favourites || 0,
+                    studios: info.studios?.nodes?.map((s: any) => s.name) || [],
+                    malId: null,
+                    totalEpisodes: info.episodes || 0,
+                    titleForNames: info.title.english || info.title.romaji || 'Sin título',
+                };
+                
+                setAnime(animeData);
+                
+                // Detectar temporadas usando el ID para Mushoku
+                const detectedSeasons = detectSeasons(animeData.title, id);
                 setSeasons(detectedSeasons);
                 
                 // Calcular total de episodios
-                let total = getTotalEpisodes(detectedSeasons);
+                let total = 0;
+                
+                // Si es Mushoku Tensei, calcular total con el mapeo
+                if (animeData.title.toLowerCase().includes('mushoku')) {
+                    total = getTotalEpisodesForMushoku(id);
+                    console.log(`📊 Mushoku Tensei: total calculado por ID: ${total} episodios`);
+                }
+                
                 if (total === 0) {
-                    total = info.episodes || getKnownEpisodes(info.title) || 12;
+                    total = getTotalEpisodes(detectedSeasons);
+                }
+                if (total === 0) {
+                    total = animeData.episodes || getKnownEpisodes(animeData.title) || 12;
                 }
                 setTotalEpisodes(total);
                 
@@ -270,20 +584,20 @@ function WatchComponent() {
         loadAnime();
     }, [id]);
 
-    // Buscar el token para el episodio usando el título del anime
+    // Buscar el token para el episodio usando la función con prioridad corregida
     useEffect(() => {
         if (typeof window === 'undefined' || !anime) return;
         
         const episodeNum = Number(episodeId);
         console.log(`🔍 Buscando token para "${anime.title}" - Episodio ${episodeNum}`);
         
-        // Usar la función mejorada de búsqueda
-        const token = findTokenForEpisode(anime.title, episodeNum);
+        // 🔥 USAR LA FUNCIÓN CON PRIORIDAD CORREGIDA (pasando el ID como string)
+        const token = getEpisodeUrl(anime.title, episodeId, String(id));
         
         // Buscar información de la temporada
         let sName = '';
         let seasonIdx = 0;
-        const seasonData = getSeasonKeyForEpisode(episodeNum, seasons);
+        const seasonData = getSeasonKeyForEpisode(episodeNum, seasons, id);
         if (seasonData.key) {
             sName = getSeasonName(seasonData.key, seasonData.seasonIndex);
             seasonIdx = seasonData.seasonIndex;
@@ -300,7 +614,38 @@ function WatchComponent() {
         setVideoUrl(token || null);
         setSeasonName(sName);
         setSelectedSeason(seasonIdx);
-    }, [episodeId, anime, seasons]);
+    }, [episodeId, anime, seasons, id]);
+
+    // ============================================================
+    // 🔥 EFECTO PARA POSICIONAR LA LISTA DE EPISODIOS CERCA DEL EPISODIO ACTUAL
+    // ============================================================
+    useEffect(() => {
+        if (!anime || !seasons || seasons.length === 0) return;
+        
+        const episodeNum = Number(episodeId);
+        
+        // Obtener los episodios de la temporada seleccionada
+        let startEpisode = 1;
+        for (let i = 0; i < selectedSeason; i++) {
+            startEpisode += (seasons[i]?.episodeCount || 0);
+        }
+        const currentSeason = seasons[selectedSeason];
+        if (!currentSeason) return;
+        
+        const seasonEpisodes = Array.from(
+            { length: currentSeason.episodeCount }, 
+            (_, i) => startEpisode + i
+        );
+        
+        // Encontrar la página donde está el episodio actual
+        const page = Math.floor((episodeNum - startEpisode) / EPISODES_PER_PAGE) + 1;
+        const totalPages = Math.ceil(seasonEpisodes.length / EPISODES_PER_PAGE);
+        const newPage = Math.max(1, Math.min(page, totalPages));
+        
+        if (newPage !== currentPage) {
+            setCurrentPage(newPage);
+        }
+    }, [episodeId, selectedSeason, seasons, currentPage]);
 
     // Cambiar de temporada
     const changeSeason = (seasonIndex: number) => {
