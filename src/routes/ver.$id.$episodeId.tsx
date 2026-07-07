@@ -88,7 +88,7 @@ function getSeasonKeyForEpisodeMushoku(animeId: string, episodeNum: number): { k
 }
 
 // ============================================================
-// 🔥 FUNCIÓN PARA OBTENER URL DE EPISODIO (CON RANGOS DE EPISODIOS)
+// 🔥 FUNCIÓN PARA OBTENER URL DE EPISODIO (VERSIÓN ESTABLE CON MAPEO MANUAL)
 // ============================================================
 
 function getEpisodeUrl(animeTitle: string, episodeId: string, animeId?: string): string | null {
@@ -120,13 +120,13 @@ function getEpisodeUrl(animeTitle: string, episodeId: string, animeId?: string):
     }
     
     // ============================================================
-    // 🔥 2. SEGUNDO: Buscar por ID de AniList (CON RANGOS DE EPISODIOS)
+    // 2. SEGUNDO: Buscar por ID de AniList (MAPEO MANUAL)
     // ============================================================
     if (animeId) {
         // Mapeo de IDs de AniList a slugs y sus rangos de episodios
         const idToSlug: Record<string, { slug: string; startEpisode: number; endEpisode: number }[]> = {
             // ============================================================
-            // 🔥 MUSHOKU TENSEI (TODAS LAS TEMPORADAS)
+            // MUSHOKU TENSEI
             // ============================================================
             '108465': [
                 { slug: 'mushoku-tensei-isekai-ittara-honki-dasu', startEpisode: 1, endEpisode: 11 },
@@ -163,6 +163,9 @@ function getEpisodeUrl(animeTitle: string, episodeId: string, animeId?: string):
             '48549': [
                 { slug: 'jujutsu-kaisen', startEpisode: 1, endEpisode: 24 },
             ],
+            '145064': [
+                { slug: 'jujutsu-kaisen-2', startEpisode: 1, endEpisode: 23 },
+            ],
             // ============================================================
             // ATTACK ON TITAN
             // ============================================================
@@ -177,6 +180,18 @@ function getEpisodeUrl(animeTitle: string, episodeId: string, animeId?: string):
             ],
             'ID_FMA_BROTHERHOOD': [
                 { slug: 'fullmetal-alchemist-brotherhood', startEpisode: 1, endEpisode: 64 },
+            ],
+            // ============================================================
+            // ONE PUNCH MAN
+            // ============================================================
+            '21087': [
+                { slug: 'one-punch-man', startEpisode: 1, endEpisode: 12 },
+            ],
+            '97668': [
+                { slug: 'one-punch-man-2', startEpisode: 1, endEpisode: 12 },
+            ],
+            'ID_T3': [
+                { slug: 'one-punch-man-3', startEpisode: 1, endEpisode: 12 },
             ],
         };
         
@@ -426,6 +441,9 @@ const KNOWN_EPISODES: Record<string, number> = {
     'jujutsu kaisen': 47,
     'demon slayer': 55,
     'kimetsu no yaiba': 55,
+    'one punch man': 12,
+    'one punch man 2': 12,
+    'one punch man 3': 12,
 };
 
 function getKnownEpisodes(title: string): number {

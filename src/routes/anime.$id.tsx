@@ -284,126 +284,55 @@ async function getAnimeInfo(id: number) {
         ],
     };
     
-    // ============================================================
-    // 🔥 MAPEO DE IDs PARA FULLMETAL ALCHEMIST
-    // ============================================================
+    // 1. Intentar obtener los slugs por ID de AniList
+    if (mushokuIdToSlug[String(id)]) {
+        targetSlugs = mushokuIdToSlug[String(id)];
+        console.log(`🔍 Usando slugs por ID: ${targetSlugs.join(', ')}`);
+    } else {
+        // 2. Si no hay mapeo, buscar por coincidencia con el título
+        const clean = cleanTitle(title);
+        for (const [slug, episodes] of Object.entries(tokens)) {
+            if (slug.includes(clean) || clean.includes(slug)) {
+                targetSlugs = [slug];
+                console.log(`🔍 Usando slug por coincidencia: "${slug}"`);
+                break;
+            }
+        }
+    }
     
-    const fmaIdToSlug: Record<string, string> = {
-        'ID_FMA_2003': 'fullmetal-alchemist',        // 51 episodios
-        'ID_FMA_BROTHERHOOD': 'fullmetal-alchemist-brotherhood', // 64 episodios
-    };
-    
-    // 1. Si es Fullmetal Alchemist, usar el mapeo específico
-    if (title.toLowerCase().includes('fullmetal alchemist')) {
-        const targetSlug = fmaIdToSlug[String(id)];
-        if (targetSlug && tokens[targetSlug]) {
-            const episodes = tokens[targetSlug];
-            const episodeCount = Object.keys(episodes).length;
+    // Si encontramos slugs y tienen episodios, combinarlos CON RENUMERACIÓN
+    if (targetSlugs.length > 0) {
+        const allEpisodes: Record<number, string> = {};
+        let episodeCounter = 1;
+        
+        for (const slug of targetSlugs) {
+            if (tokens[slug]) {
+                const episodes = tokens[slug];
+                const episodeNumbers = Object.keys(episodes).map(Number).sort((a, b) => a - b);
+                console.log(`📺 "${slug}": ${episodeNumbers.length} episodios (${episodeNumbers.join(', ')})`);
+                
+                // Renumerar secuencialmente
+                for (const epNum of episodeNumbers) {
+                    allEpisodes[episodeCounter] = episodes[epNum];
+                    console.log(`   Episodio ${epNum} → ${episodeCounter}`);
+                    episodeCounter++;
+                }
+            }
+        }
+        
+        const episodeCount = Object.keys(allEpisodes).length;
+        if (episodeCount > 0) {
             totalEpisodesFromTokens = episodeCount;
             seasons = [{ key: 'all-episodes', episodeCount: episodeCount }];
             totalEpisodes = episodeCount;
-            console.log(`✅ Usando token "${targetSlug}": ${episodeCount} episodios`);
-            console.log(`📊 Episodios: ${Object.keys(episodes).map(Number).sort((a,b) => a-b).join(', ')}`);
-        } else {
-            // Si no se encuentra el token, usar la lógica original
-            console.log('ℹ️ No se encontró token para Fullmetal Alchemist, usando lógica original...');
-            const localStorageSeasons = detectSeasons(title);
-            const localStorageEpisodes = getTotalEpisodes(localStorageSeasons);
-            
-            if (localStorageSeasons.length > 0) {
-                seasons = localStorageSeasons;
-                totalEpisodes = localStorageEpisodes;
-                console.log(`✅ Usando temporadas de localStorage: ${seasons.length}, episodios: ${totalEpisodes}`);
-            } else {
-                let episodes = getKnownEpisodes(title);
-                if (episodes === 0) {
-                    episodes = media.episodes || 12;
-                }
-                if (episodes === 0) {
-                    episodes = 12;
-                }
-                seasons = [{ key: 'all-episodes', episodeCount: episodes }];
-                totalEpisodes = episodes;
-                console.log(`✅ Usando una sola temporada con ${totalEpisodes} episodios`);
-            }
+            console.log(`✅ Combinados ${targetSlugs.length} slugs con renumeración: ${episodeCount} episodios totales`);
+            console.log(`📊 Episodios: ${Object.keys(allEpisodes).map(Number).sort((a,b) => a-b).join(', ')}`);
         }
     }
-    // 2. Si es Mushoku Tensei, usar el mapeo específico
-    else if (title.toLowerCase().includes('mushoku')) {
-        // Intentar obtener los slugs por ID de AniList
-        if (mushokuIdToSlug[String(id)]) {
-            targetSlugs = mushokuIdToSlug[String(id)];
-            console.log(`🔍 Usando slugs por ID: ${targetSlugs.join(', ')}`);
-        } else {
-            // Si no hay mapeo, buscar por coincidencia con el título
-            const clean = cleanTitle(title);
-            for (const [slug, episodes] of Object.entries(tokens)) {
-                if (slug.includes(clean) || clean.includes(slug)) {
-                    targetSlugs = [slug];
-                    console.log(`🔍 Usando slug por coincidencia: "${slug}"`);
-                    break;
-                }
-            }
-        }
-        
-        // Si encontramos slugs y tienen episodios, combinarlos CON RENUMERACIÓN
-        if (targetSlugs.length > 0) {
-            const allEpisodes: Record<number, string> = {};
-            let episodeCounter = 1;
-            
-            for (const slug of targetSlugs) {
-                if (tokens[slug]) {
-                    const episodes = tokens[slug];
-                    const episodeNumbers = Object.keys(episodes).map(Number).sort((a, b) => a - b);
-                    console.log(`📺 "${slug}": ${episodeNumbers.length} episodios (${episodeNumbers.join(', ')})`);
-                    
-                    // Renumerar secuencialmente
-                    for (const epNum of episodeNumbers) {
-                        allEpisodes[episodeCounter] = episodes[epNum];
-                        console.log(`   Episodio ${epNum} → ${episodeCounter}`);
-                        episodeCounter++;
-                    }
-                }
-            }
-            
-            const episodeCount = Object.keys(allEpisodes).length;
-            if (episodeCount > 0) {
-                totalEpisodesFromTokens = episodeCount;
-                seasons = [{ key: 'all-episodes', episodeCount: episodeCount }];
-                totalEpisodes = episodeCount;
-                console.log(`✅ Combinados ${targetSlugs.length} slugs con renumeración: ${episodeCount} episodios totales`);
-                console.log(`📊 Episodios: ${Object.keys(allEpisodes).map(Number).sort((a,b) => a-b).join(', ')}`);
-            }
-        }
-        
-        // Si no se encontraron episodios, usar la lógica original
-        if (seasons.length === 0) {
-            console.log('ℹ️ No se encontraron episodios, usando lógica original...');
-            const localStorageSeasons = detectSeasons(title);
-            const localStorageEpisodes = getTotalEpisodes(localStorageSeasons);
-            
-            if (localStorageSeasons.length > 0) {
-                seasons = localStorageSeasons;
-                totalEpisodes = localStorageEpisodes;
-                console.log(`✅ Usando temporadas de localStorage: ${seasons.length}, episodios: ${totalEpisodes}`);
-            } else {
-                let episodes = getKnownEpisodes(title);
-                if (episodes === 0) {
-                    episodes = media.episodes || 12;
-                }
-                if (episodes === 0) {
-                    episodes = 12;
-                }
-                seasons = [{ key: 'all-episodes', episodeCount: episodes }];
-                totalEpisodes = episodes;
-                console.log(`✅ Usando una sola temporada con ${totalEpisodes} episodios`);
-            }
-        }
-    }
-    // 3. Si no hay mapeo específico, usar la lógica original
-    else {
-        console.log('ℹ️ Usando lógica original para otros animes...');
-        
+    
+    // Si no se encontraron episodios, usar la lógica original
+    if (seasons.length === 0) {
+        console.log('ℹ️ No se encontraron episodios, usando lógica original...');
         // Si hay tokens, intentar renumerar todos los episodios
         if (Object.keys(tokens).length > 0) {
             const result = getAllFamilyEpisodesRenumbered(tokens, title);

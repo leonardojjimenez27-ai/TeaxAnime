@@ -46,11 +46,15 @@ export const ANIME_FAMILIES: Record<string, { mainId: number; name: string; alia
         name: 'Jujutsu Kaisen',
         aliases: [
             'Jujutsu Kaisen',
-            'Jujutsu Kaisen 2nd Season',
-            'Jujutsu Kaisen: Shimetsu Kaiyuu Zenpen',
             'jujutsu-kaisen',
+        ]
+    },
+    'jujutsu-kaisen-2': {
+        mainId: 145064,
+        name: 'Jujutsu Kaisen Season 2',
+        aliases: [
+            'Jujutsu Kaisen 2nd Season',
             'jujutsu-kaisen-2',
-            'jujutsu-kaisen-shimetsu-kaiyuu-zenpen',
         ]
     },
     // ============================================================
@@ -143,7 +147,7 @@ export const ANIME_FAMILIES: Record<string, { mainId: number; name: string; alia
         ]
     },
     // ============================================================
-    // FULLMETAL ALCHEMIST - SEPARADO EN DOS SERIES
+    // FULLMETAL ALCHEMIST - SEPARADO EN DOS SERIES (CASO ESPECIAL)
     // ============================================================
     'fullmetal-alchemist': {
         mainId: 1,
@@ -162,7 +166,7 @@ export const ANIME_FAMILIES: Record<string, { mainId: number; name: string; alia
         ]
     },
     // ============================================================
-    // HUNTER X HUNTER - SEPARADO EN DOS SERIES
+    // HUNTER X HUNTER - SEPARADO EN DOS SERIES (CASO ESPECIAL)
     // ============================================================
     'hunter-x-hunter-1999': {
         mainId: 1,
@@ -209,7 +213,6 @@ export const ANIME_FAMILIES: Record<string, { mainId: number; name: string; alia
             'sword-art-online-alicization',
         ]
     },
-    // WAR OF UNDERWORLD - SÍ SE AGRUPA (PARTE 1 + PARTE 2)
     'sword-art-online-war-of-underworld': {
         mainId: 108759,
         name: 'Sword Art Online: Alicization - War of Underworld',
@@ -217,6 +220,36 @@ export const ANIME_FAMILIES: Record<string, { mainId: number; name: string; alia
             'Sword Art Online: Alicization - War of Underworld',
             'sword-art-online-alicization-war-of-underworld',
             'sword-art-online-alicization-war-of-underworld-2',
+        ]
+    },
+    // ============================================================
+    // ONE PUNCH MAN - CADA TEMPORADA COMO ANIME INDEPENDIENTE
+    // ============================================================
+    'one-punch-man': {
+        mainId: 21087,
+        name: 'One Punch Man',
+        aliases: [
+            'One Punch Man',
+            'One-Punch Man',
+            'one-punch-man',
+        ]
+    },
+    'one-punch-man-2': {
+        mainId: 97668,
+        name: 'One Punch Man Season 2',
+        aliases: [
+            'One Punch Man Season 2',
+            'One-Punch Man Season 2',
+            'one-punch-man-2',
+        ]
+    },
+    'one-punch-man-3': {
+        mainId: 3,
+        name: 'One Punch Man Season 3',
+        aliases: [
+            'One Punch Man Season 3',
+            'One-Punch Man Season 3',
+            'one-punch-man-3',
         ]
     },
 };
@@ -239,7 +272,7 @@ function cleanTitle(title: string): string {
 // FUNCIÓN PARA OBTENER EL NOMBRE BASE DE UN ANIME
 // ============================================================
 
-function getBaseAnimeName(title: string): string {
+export function getBaseName(title: string): string {
     let base = title
         .replace(/season\s*\d+/i, '')
         .replace(/part\s*\d+/i, '')
@@ -257,26 +290,6 @@ function getBaseAnimeName(title: string): string {
     base = base.replace(/-+$/, '').trim();
     
     return base || title;
-}
-
-// ============================================================
-// FUNCIÓN PARA EXTRAER EL NÚMERO DE TEMPORADA
-// ============================================================
-
-function extractSeasonNumber(text: string): number {
-    const match = text.match(/season\s*(\d+)/i);
-    if (match) return parseInt(match[1]);
-    
-    const matchPart = text.match(/part\s*(\d+)/i);
-    if (matchPart) return parseInt(matchPart[1]);
-    
-    const matchCour = text.match(/cour\s*(\d+)/i);
-    if (matchCour) return parseInt(matchCour[1]);
-    
-    const matchNum = text.match(/-(\d+)$/);
-    if (matchNum) return parseInt(matchNum[1]);
-    
-    return 1;
 }
 
 // ============================================================
@@ -418,7 +431,23 @@ const noGrouping = [
     'sword-art-online',
     'sword-art-online-ii',
     'sword-art-online-alicization',
-    // NOTA: War of Underworld NO está aquí - SÍ se agrupa
+    
+    // One Punch Man - TODAS LAS TEMPORADAS (no agrupar)
+    'one punch man',
+    'one-punch man',
+    'one-punch-man',
+    'one punch man season 2',
+    'one-punch man season 2',
+    'one-punch-man-2',
+    'one punch man season 3',
+    'one-punch man season 3',
+    'one-punch-man-3',
+    
+    // Jujutsu Kaisen - TEMPORADAS SEPARADAS
+    'jujutsu kaisen',
+    'jujutsu kaisen season 2',
+    'jujutsu-kaisen',
+    'jujutsu-kaisen-2',
 ];
 
 // ============================================================
@@ -441,7 +470,7 @@ export function detectSeasonFamilies(tokens: Record<string, Record<number, strin
     
     for (const [slug, episodes] of Object.entries(tokens)) {
         // Intentar extraer el nombre base
-        const baseName = getBaseAnimeName(slug.replace(/-/g, ' '));
+        const baseName = getBaseName(slug.replace(/-/g, ' '));
         const key = baseName.toLowerCase().replace(/\s+/g, '-');
         
         if (!tokenGroups[key]) {
@@ -511,6 +540,26 @@ export function detectSeasonFamilies(tokens: Record<string, Record<number, strin
 }
 
 // ============================================================
+// FUNCIÓN PARA EXTRAER EL NÚMERO DE TEMPORADA
+// ============================================================
+
+function extractSeasonNumber(text: string): number {
+    const match = text.match(/season\s*(\d+)/i);
+    if (match) return parseInt(match[1]);
+    
+    const matchPart = text.match(/part\s*(\d+)/i);
+    if (matchPart) return parseInt(matchPart[1]);
+    
+    const matchCour = text.match(/cour\s*(\d+)/i);
+    if (matchCour) return parseInt(matchCour[1]);
+    
+    const matchNum = text.match(/-(\d+)$/);
+    if (matchNum) return parseInt(matchNum[1]);
+    
+    return 1;
+}
+
+// ============================================================
 // FUNCIÓN PARA OBTENER EL NOMBRE COMPLETO DE LA TEMPORADA
 // ============================================================
 
@@ -564,7 +613,7 @@ export function shouldUseGrouping(title: string): boolean {
 }
 
 // ============================================================
-// 🔥 FUNCIÓN UNIVERSAL PARA RENUMERAR EPISODIOS (CON CORRECCIÓN ESPECIAL)
+// 🔥 FUNCIÓN UNIVERSAL PARA RENUMERAR EPISODIOS
 // ============================================================
 
 export function getAllFamilyEpisodesRenumbered(
@@ -587,7 +636,6 @@ export function getAllFamilyEpisodesRenumbered(
     if (titleLower.includes('war of underworld') || titleLower.includes('war-of-underworld')) {
         console.log(`🔥 War of Underworld detectado: agrupando todas las partes...`);
         
-        // Buscar todos los slugs relacionados
         const relatedSlugs = Object.keys(tokens).filter(slug => 
             slug.includes('war-of-underworld') || slug.includes('war-of-underworld-2')
         );
