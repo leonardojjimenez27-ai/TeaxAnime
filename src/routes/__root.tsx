@@ -85,6 +85,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
           "Ver anime online gratis en HD. Catálogo completo con animes nuevos y clásicos, todos sus episodios subtitulados y doblados. TeaxAnime.",
       },
       { name: "theme-color", content: "#a855f7" },
+      { name: "color-scheme", content: "dark light" },
       { name: "author", content: "TeaxAnime" },
       { property: "og:site_name", content: "TeaxAnime" },
       { property: "og:type", content: "website" },
@@ -129,7 +130,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="es">
+    <html lang="es" className="dark">
       <head>
         <HeadContent />
       </head>
@@ -144,17 +145,16 @@ function RootShell({ children }: { children: ReactNode }) {
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
-  // ============================================================
-  // 🔥 PASO 3: DETECCIÓN AUTOMÁTICA DE TEMPORADAS
-  // ============================================================
   useEffect(() => {
-    // Detectar y crear familias automáticamente
-    try {
-      updateFamiliesFromTokens();
-      console.log('🔄 Detección automática de temporadas completada');
-    } catch (error) {
-      console.warn('⚠️ Error en detección automática:', error);
-    }
+    const initializeSeasons = async () => {
+      try {
+        await updateFamiliesFromTokens();
+        console.log('🔄 Detección automática de temporadas completada');
+      } catch (error) {
+        console.warn('⚠️ Error en detección automática:', error);
+      }
+    };
+    initializeSeasons();
   }, []);
 
   return (
