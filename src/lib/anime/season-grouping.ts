@@ -4,6 +4,15 @@
 // SISTEMA DE AGRUPACIÓN DE TEMPORADAS
 // ============================================================
 
+import { 
+    findCorrectSlug, 
+    getCombinedEpisodes, 
+    normalizeTitle, 
+    generateSlug, 
+    detectSeasonNumber,
+    ANILIST_ID_TO_SLUG
+} from './title-matcher';
+
 // Mapeo de nombres de animes a su "familia" (grupo de temporadas)
 export const ANIME_FAMILIES: Record<string, { mainId: number; name: string; aliases: string[] }> = {
     // ============================================================
@@ -150,7 +159,7 @@ export const ANIME_FAMILIES: Record<string, { mainId: number; name: string; alia
     // FULLMETAL ALCHEMIST - SEPARADO EN DOS SERIES (CASO ESPECIAL)
     // ============================================================
     'fullmetal-alchemist': {
-        mainId: 1,
+        mainId: 121,
         name: 'Fullmetal Alchemist',
         aliases: [
             'Fullmetal Alchemist',
@@ -158,7 +167,7 @@ export const ANIME_FAMILIES: Record<string, { mainId: number; name: string; alia
         ]
     },
     'fullmetal-alchemist-brotherhood': {
-        mainId: 2,
+        mainId: 5114,
         name: 'Fullmetal Alchemist: Brotherhood',
         aliases: [
             'Fullmetal Alchemist Brotherhood',
@@ -190,7 +199,7 @@ export const ANIME_FAMILIES: Record<string, { mainId: number; name: string; alia
     // SWORD ART ONLINE - TEMPORADAS SEPARADAS
     // ============================================================
     'sword-art-online': {
-        mainId: 1,
+        mainId: 11757,
         name: 'Sword Art Online',
         aliases: [
             'Sword Art Online',
@@ -244,7 +253,7 @@ export const ANIME_FAMILIES: Record<string, { mainId: number; name: string; alia
         ]
     },
     'one-punch-man-3': {
-        mainId: 3,
+        mainId: 153800,
         name: 'One Punch Man Season 3',
         aliases: [
             'One Punch Man Season 3',
@@ -451,149 +460,156 @@ const noGrouping = [
 ];
 
 // ============================================================
-// 🔥 DETECCIÓN AUTOMÁTICA DE TEMPORADAS SEPARADAS
+// FUNCIÓN PARA EXTRAER EL NÚMERO DE TEMPORADA
 // ============================================================
 
-export function detectSeasonFamilies(tokens: Record<string, Record<number, string>>): Record<string, { 
-    mainId: number; 
-    name: string; 
-    aliases: string[] 
-}> {
-    const families: Record<string, { mainId: number; name: string; aliases: string[] }> = {};
+function extractSeasonNumberLegacy(text: string): number {
+    const matchSeason = text.match(/season\s*(\d+)/i);
+    if (matchSeason) return parseInt(matchSeason[1]);
+    const matchPart = text.match(/part\s*(\d+)/i);
+    if (matchPart) return parseInt(matchPart[1]);
+    const matchCour = text.match(/cour\s*(\d+)/i);
+    if (matchCour) return parseInt(matchCour[1]);
+    const matchNum = text.match(/-(\d+)$/);
+    if (matchNum) return parseInt(matchNum[1]);
+    return 0;
+}
+
+// ============================================================
+// 🔥 FUNCIÓN PRINCIPAL: Obtener episodios SOLO de la temporada actual
+// ============================================================
+
+export function getEpisodesForCurrentSeason(
+    tokens: Record<string, Record<number, string>>,
+    title: string,
+    animeId: string
+): { episodes: Record<number, string>; total: number; seasonKey: string } {
+    console.log(`🔍 Buscando episodios para: "${title}" (ID: ${animeId})`);
+    console.log(`📋 Tokens disponibles:`, Object.keys(tokens));
     
-    // Agrupar tokens por nombre base
-    const tokenGroups: Record<string, { 
-        slugs: string[]; 
-        episodes: Record<number, string>;
-        seasonNumbers: number[];
-    }> = {};
-    
-    for (const [slug, episodes] of Object.entries(tokens)) {
-        // Intentar extraer el nombre base
-        const baseName = getBaseName(slug.replace(/-/g, ' '));
-        const key = baseName.toLowerCase().replace(/\s+/g, '-');
-        
-        if (!tokenGroups[key]) {
-            tokenGroups[key] = { slugs: [], episodes: {}, seasonNumbers: [] };
-        }
-        tokenGroups[key].slugs.push(slug);
-        tokenGroups[key].seasonNumbers.push(extractSeasonNumber(slug));
-        for (const [ep, url] of Object.entries(episodes)) {
-            tokenGroups[key].episodes[Number(ep)] = url;
-        }
+    // ============================================================
+    // 0. PRIMERO: Detectar y combinar partes automáticamente
+    // ============================================================
+    const combined = getCombinedEpisodes(tokens, animeId, title);
+    if (combined && combined.total > 0 && combined.slugs.length > 1) {
+        console.log(`✅ Usando combinación automática: ${combined.total} episodios`);
+        console.log(`📂 Slugs combinados:`, combined.slugs);
+        return {
+            episodes: combined.episodes,
+            total: combined.total,
+            seasonKey: combined.slugs.join('+')
+        };
     }
     
-    // Para cada grupo, determinar si debe separarse
-    for (const [key, group] of Object.entries(tokenGroups)) {
-        // Si hay múltiples slugs con diferentes números de temporada, separar
-        const uniqueSeasons = [...new Set(group.seasonNumbers)].sort((a, b) => a - b);
-        
-        if (uniqueSeasons.length > 1) {
-            // Múltiples temporadas -> crear una familia por temporada
-            const baseName = key.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-            
-            for (const seasonNum of uniqueSeasons) {
-                // Encontrar los slugs que corresponden a esta temporada
-                const seasonSlugs = group.slugs.filter(s => extractSeasonNumber(s) === seasonNum);
-                const familyKey = seasonNum === 1 ? key : `${key}-season-${seasonNum}`;
-                
-                // Buscar el ID de AniList si existe
-                let mainId = 0;
-                for (const slug of seasonSlugs) {
-                    for (const [existingKey, existingFamily] of Object.entries(ANIME_FAMILIES)) {
-                        if (existingFamily.aliases.some(a => cleanTitle(a) === slug)) {
-                            mainId = existingFamily.mainId;
-                            break;
-                        }
-                    }
-                    if (mainId > 0) break;
-                }
-                
-                families[familyKey] = {
-                    mainId: mainId,
-                    name: getSeasonDisplayName(baseName, seasonNum),
-                    aliases: seasonSlugs
-                };
+    // ============================================================
+    // 1. Usar el sistema de mapeo de title-matcher
+    // ============================================================
+    const result = findCorrectSlug(tokens, animeId, title);
+    
+    if (result) {
+        const episodes = tokens[result.slug];
+        if (episodes) {
+            const episodeNumbers = Object.keys(episodes).map(Number).sort((a, b) => a - b);
+            const renumbered: Record<number, string> = {};
+            let counter = 1;
+            for (const num of episodeNumbers) {
+                renumbered[counter] = episodes[num];
+                counter++;
             }
-        } else if (group.slugs.length === 1) {
-            // Un solo slug -> familia normal
-            const slug = group.slugs[0];
-            const baseName = key.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-            
-            let mainId = 0;
-            for (const [existingKey, existingFamily] of Object.entries(ANIME_FAMILIES)) {
-                if (existingFamily.aliases.some(a => cleanTitle(a) === slug)) {
-                    mainId = existingFamily.mainId;
-                    break;
-                }
-            }
-            
-            families[key] = {
-                mainId: mainId,
-                name: baseName,
-                aliases: [slug]
+            console.log(`✅ Encontrados ${episodeNumbers.length} episodios en "${result.slug}"`);
+            return {
+                episodes: renumbered,
+                total: episodeNumbers.length,
+                seasonKey: result.slug
             };
         }
     }
     
-    return families;
-}
-
-// ============================================================
-// FUNCIÓN PARA EXTRAER EL NÚMERO DE TEMPORADA
-// ============================================================
-
-function extractSeasonNumber(text: string): number {
-    const match = text.match(/season\s*(\d+)/i);
-    if (match) return parseInt(match[1]);
+    // ============================================================
+    // 2. Fallback: búsqueda manual por título limpio
+    // ============================================================
+    console.warn(`⚠️ No se encontró slug con title-matcher, intentando búsqueda manual...`);
+    const clean = cleanTitle(title);
+    const exactSlug = clean;
     
-    const matchPart = text.match(/part\s*(\d+)/i);
-    if (matchPart) return parseInt(matchPart[1]);
-    
-    const matchCour = text.match(/cour\s*(\d+)/i);
-    if (matchCour) return parseInt(matchCour[1]);
-    
-    const matchNum = text.match(/-(\d+)$/);
-    if (matchNum) return parseInt(matchNum[1]);
-    
-    return 1;
-}
-
-// ============================================================
-// FUNCIÓN PARA OBTENER EL NOMBRE COMPLETO DE LA TEMPORADA
-// ============================================================
-
-function getSeasonDisplayName(baseName: string, seasonNumber: number): string {
-    if (seasonNumber === 1) {
-        return baseName;
+    if (tokens[exactSlug]) {
+        const episodes = tokens[exactSlug];
+        const episodeNumbers = Object.keys(episodes).map(Number).sort((a, b) => a - b);
+        const renumbered: Record<number, string> = {};
+        let counter = 1;
+        for (const num of episodeNumbers) {
+            renumbered[counter] = episodes[num];
+            counter++;
+        }
+        console.log(`✅ Encontrados ${episodeNumbers.length} episodios en slug exacto: "${exactSlug}"`);
+        return {
+            episodes: renumbered,
+            total: episodeNumbers.length,
+            seasonKey: exactSlug
+        };
     }
-    return `${baseName} Season ${seasonNumber}`;
-}
-
-// ============================================================
-// 🔥 FUNCIÓN PARA ACTUALIZAR FAMILIAS DESDE TOKENS
-// ============================================================
-
-export function updateFamiliesFromTokens(): void {
-    const tokens = typeof window !== 'undefined' 
-        ? JSON.parse(localStorage.getItem('blogger_tokens') || '{}')
-        : {};
     
-    if (Object.keys(tokens).length === 0) return;
+    // ============================================================
+    // 3. Buscar por variantes del título
+    // ============================================================
+    const variants = [
+        clean,
+        title.toLowerCase().replace(/\s+/g, '-'),
+        title.toLowerCase().replace(/\s+/g, '_'),
+        title.toLowerCase().replace(/\s+/g, '').replace(/-+/g, '-'),
+    ];
     
-    const detected = detectSeasonFamilies(tokens);
-    
-    // Fusionar con las familias existentes
-    for (const [key, family] of Object.entries(detected)) {
-        if (!ANIME_FAMILIES[key]) {
-            ANIME_FAMILIES[key] = family;
-            console.log(`✅ Familia automática creada: "${family.name}" (${family.aliases.join(', ')})`);
+    for (const variant of variants) {
+        if (tokens[variant]) {
+            const episodes = tokens[variant];
+            const episodeNumbers = Object.keys(episodes).map(Number).sort((a, b) => a - b);
+            const renumbered: Record<number, string> = {};
+            let counter = 1;
+            for (const num of episodeNumbers) {
+                renumbered[counter] = episodes[num];
+                counter++;
+            }
+            console.log(`✅ Encontrados ${episodeNumbers.length} episodios en variante: "${variant}"`);
+            return {
+                episodes: renumbered,
+                total: episodeNumbers.length,
+                seasonKey: variant
+            };
         }
     }
+    
+    // ============================================================
+    // 4. Último recurso: buscar por coincidencia
+    // ============================================================
+    for (const [slug, episodes] of Object.entries(tokens)) {
+        if (slug.includes(clean) || clean.includes(slug)) {
+            const episodeNumbers = Object.keys(episodes).map(Number).sort((a, b) => a - b);
+            const renumbered: Record<number, string> = {};
+            let counter = 1;
+            for (const num of episodeNumbers) {
+                renumbered[counter] = episodes[num];
+                counter++;
+            }
+            console.log(`✅ Encontrados ${episodeNumbers.length} episodios por coincidencia: "${slug}"`);
+            return {
+                episodes: renumbered,
+                total: episodeNumbers.length,
+                seasonKey: slug
+            };
+        }
+    }
+    
+    console.warn(`❌ No se encontraron episodios para "${title}"`);
+    console.log(`💡 Sugerencia: Agrega el slug "${clean}" a ANILIST_ID_TO_SLUG en title-matcher.ts`);
+    return {
+        episodes: {},
+        total: 0,
+        seasonKey: ''
+    };
 }
 
 // ============================================================
-// 🔥 FUNCIÓN PARA DETECTAR SI UN ANIME DEBE USAR AGRUPACIÓN
+// FUNCIÓN PARA DETECTAR SI UN ANIME DEBE USAR AGRUPACIÓN
 // ============================================================
 
 export function shouldUseGrouping(title: string): boolean {
@@ -852,4 +868,142 @@ export function getAllMushokuEpisodes(tokens: Record<string, Record<number, stri
     }
     
     return allEpisodes;
+}
+
+// ============================================================
+// FUNCIÓN PARA DETECTAR FAMILIAS DESDE TOKENS
+// ============================================================
+
+function detectSeasonFamilies(tokens: Record<string, Record<number, string>>): Record<string, { 
+    mainId: number; 
+    name: string; 
+    aliases: string[] 
+}> {
+    const families: Record<string, { mainId: number; name: string; aliases: string[] }> = {};
+    
+    // Agrupar tokens por nombre base
+    const tokenGroups: Record<string, { 
+        slugs: string[]; 
+        episodes: Record<number, string>;
+        seasonNumbers: number[];
+    }> = {};
+    
+    for (const [slug, episodes] of Object.entries(tokens)) {
+        // Intentar extraer el nombre base
+        const baseName = getBaseName(slug.replace(/-/g, ' '));
+        const key = baseName.toLowerCase().replace(/\s+/g, '-');
+        
+        if (!tokenGroups[key]) {
+            tokenGroups[key] = { slugs: [], episodes: {}, seasonNumbers: [] };
+        }
+        tokenGroups[key].slugs.push(slug);
+        tokenGroups[key].seasonNumbers.push(extractSeasonNumberLegacy(slug));
+        for (const [ep, url] of Object.entries(episodes)) {
+            tokenGroups[key].episodes[Number(ep)] = url;
+        }
+    }
+    
+    // Para cada grupo, determinar si debe separarse
+    for (const [key, group] of Object.entries(tokenGroups)) {
+        // Si hay múltiples slugs con diferentes números de temporada, separar
+        const uniqueSeasons = [...new Set(group.seasonNumbers)].sort((a, b) => a - b);
+        
+        if (uniqueSeasons.length > 1) {
+            // Múltiples temporadas -> crear una familia por temporada
+            const baseName = key.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+            
+            for (const seasonNum of uniqueSeasons) {
+                // Encontrar los slugs que corresponden a esta temporada
+                const seasonSlugs = group.slugs.filter(s => extractSeasonNumberLegacy(s) === seasonNum);
+                const familyKey = seasonNum === 1 ? key : `${key}-season-${seasonNum}`;
+                
+                // Buscar el ID de AniList si existe
+                let mainId = 0;
+                for (const slug of seasonSlugs) {
+                    for (const [existingKey, existingFamily] of Object.entries(ANIME_FAMILIES)) {
+                        if (existingFamily.aliases.some(a => cleanTitle(a) === slug)) {
+                            mainId = existingFamily.mainId;
+                            break;
+                        }
+                    }
+                    if (mainId > 0) break;
+                }
+                
+                families[familyKey] = {
+                    mainId: mainId,
+                    name: getSeasonDisplayName(baseName, seasonNum),
+                    aliases: seasonSlugs
+                };
+            }
+        } else if (group.slugs.length === 1) {
+            // Un solo slug -> familia normal
+            const slug = group.slugs[0];
+            const baseName = key.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+            
+            let mainId = 0;
+            for (const [existingKey, existingFamily] of Object.entries(ANIME_FAMILIES)) {
+                if (existingFamily.aliases.some(a => cleanTitle(a) === slug)) {
+                    mainId = existingFamily.mainId;
+                    break;
+                }
+            }
+            
+            families[key] = {
+                mainId: mainId,
+                name: baseName,
+                aliases: [slug]
+            };
+        }
+    }
+    
+    return families;
+}
+
+// ============================================================
+// FUNCIÓN AUXILIAR PARA OBTENER NOMBRE DE TEMPORADA
+// ============================================================
+
+function getSeasonDisplayName(baseName: string, seasonNumber: number): string {
+    if (seasonNumber === 1) {
+        return baseName;
+    }
+    return `${baseName} Season ${seasonNumber}`;
+}
+
+// ============================================================
+// FUNCIÓN PARA ACTUALIZAR FAMILIAS DESDE TOKENS
+// ============================================================
+
+export function updateFamiliesFromTokens(): void {
+    if (typeof window === 'undefined') return;
+    
+    try {
+        const tokens = JSON.parse(localStorage.getItem('blogger_tokens') || '{}');
+        if (Object.keys(tokens).length === 0) return;
+        
+        // Detectar nuevas familias basadas en los tokens
+        const detected = detectSeasonFamilies(tokens);
+        
+        // Fusionar con las familias existentes
+        for (const [key, family] of Object.entries(detected)) {
+            if (!ANIME_FAMILIES[key]) {
+                ANIME_FAMILIES[key] = family;
+                console.log(`✅ Familia automática creada: "${family.name}" (${family.aliases.join(', ')})`);
+            }
+        }
+    } catch (e) {
+        console.error('Error actualizando familias desde tokens:', e);
+    }
+}
+
+// ============================================================
+// FUNCIÓN PARA OBTENER ID PRINCIPAL DE UN ANIME
+// ============================================================
+
+export function getMainAnimeId(title: string): number | null {
+    const family = getAnimeFamily(title);
+    if (family) {
+        return family.mainId;
+    }
+    return null;
 }

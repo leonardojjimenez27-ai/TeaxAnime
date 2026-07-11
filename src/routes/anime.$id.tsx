@@ -3,7 +3,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { useState, useEffect } from 'react'
 import { GENRE_ES } from '@/lib/anilist'
 import { cleanDescription } from '@/lib/translator'
-import { getFamilyEpisodes, getMainAnimeId, groupTokensByFamily, getAnimeFamily, getAllMushokuEpisodes, getAllFamilyEpisodesRenumbered } from '@/lib/anime/season-grouping'
+import { getFamilyEpisodes, getMainAnimeId, groupTokensByFamily, getAnimeFamily, getAllMushokuEpisodes, getAllFamilyEpisodesRenumbered, getEpisodesForCurrentSeason } from '@/lib/anime/season-grouping'
 
 // ============================================================
 // FUNCIONES DINÁMICAS PARA DETECTAR TEMPORADAS
@@ -260,114 +260,25 @@ async function getAnimeInfo(id: number) {
     let totalEpisodesFromTokens = 0;
     
     // ============================================================
-    // 🔥 DETECCIÓN DE TEMPORADA POR ID (CON AGRUPACIÓN DE PARTES)
+    // 🔥 NUEVA LÓGICA: Obtener episodios SOLO de la temporada actual
     // ============================================================
     
     const tokens = loadTokens();
-    let targetSlugs: string[] = [];
     
-    // Mapeo de IDs de AniList a slugs (agrupando partes)
-    const mushokuIdToSlug: Record<string, string[]> = {
-        // Temporada 1 (ID: 108465) - 23 episodios
-        '108465': [
-            'mushoku-tensei-isekai-ittara-honki-dasu',
-            'mushoku-tensei-isekai-ittara-honki-dasu-part-2',
-        ],
-        // Temporada 2 (ID: 146065) - 24 episodios
-        '146065': [
-            'mushoku-tensei-ii-isekai-ittara-honki-dasu',
-            'mushoku-tensei-ii-isekai-ittara-honki-dasu-part-2',
-        ],
-        // Temporada 3 (ID: 178789) - 2 episodios
-        '178789': [
-            'mushoku-tensei-isekai-ittara-honki-dasu-3',
-        ],
-    };
+    // Obtener episodios para esta temporada específica usando la nueva función
+    const seasonResult = getEpisodesForCurrentSeason(tokens, title, String(id));
     
-    // 1. Intentar obtener los slugs por ID de AniList
-    if (mushokuIdToSlug[String(id)]) {
-        targetSlugs = mushokuIdToSlug[String(id)];
-        console.log(`🔍 Usando slugs por ID: ${targetSlugs.join(', ')}`);
+    if (seasonResult.total > 0) {
+        totalEpisodesFromTokens = seasonResult.total;
+        seasons = [{ key: seasonResult.seasonKey || 'all-episodes', episodeCount: seasonResult.total }];
+        totalEpisodes = seasonResult.total;
+        console.log(`✅ Episodios encontrados para "${title}": ${totalEpisodes}`);
     } else {
-        // 2. Si no hay mapeo, buscar por coincidencia con el título
-        const clean = cleanTitle(title);
-        for (const [slug, episodes] of Object.entries(tokens)) {
-            if (slug.includes(clean) || clean.includes(slug)) {
-                targetSlugs = [slug];
-                console.log(`🔍 Usando slug por coincidencia: "${slug}"`);
-                break;
-            }
-        }
-    }
-    
-    // Si encontramos slugs y tienen episodios, combinarlos CON RENUMERACIÓN
-    if (targetSlugs.length > 0) {
-        const allEpisodes: Record<number, string> = {};
-        let episodeCounter = 1;
-        
-        for (const slug of targetSlugs) {
-            if (tokens[slug]) {
-                const episodes = tokens[slug];
-                const episodeNumbers = Object.keys(episodes).map(Number).sort((a, b) => a - b);
-                console.log(`📺 "${slug}": ${episodeNumbers.length} episodios (${episodeNumbers.join(', ')})`);
-                
-                // Renumerar secuencialmente
-                for (const epNum of episodeNumbers) {
-                    allEpisodes[episodeCounter] = episodes[epNum];
-                    console.log(`   Episodio ${epNum} → ${episodeCounter}`);
-                    episodeCounter++;
-                }
-            }
-        }
-        
-        const episodeCount = Object.keys(allEpisodes).length;
-        if (episodeCount > 0) {
-            totalEpisodesFromTokens = episodeCount;
-            seasons = [{ key: 'all-episodes', episodeCount: episodeCount }];
-            totalEpisodes = episodeCount;
-            console.log(`✅ Combinados ${targetSlugs.length} slugs con renumeración: ${episodeCount} episodios totales`);
-            console.log(`📊 Episodios: ${Object.keys(allEpisodes).map(Number).sort((a,b) => a-b).join(', ')}`);
-        }
-    }
-    
-    // Si no se encontraron episodios, usar la lógica original
-    if (seasons.length === 0) {
-        console.log('ℹ️ No se encontraron episodios, usando lógica original...');
-        // Si hay tokens, intentar renumerar todos los episodios
-        if (Object.keys(tokens).length > 0) {
-            const result = getAllFamilyEpisodesRenumbered(tokens, title);
-            
-            if (result.total > 0) {
-                totalEpisodesFromTokens = result.total;
-                seasons = [{ key: 'all-episodes', episodeCount: result.total }];
-                totalEpisodes = result.total;
-                console.log(`✅ Renumerados ${result.total} episodios de todas las temporadas`);
-                console.log(`📂 Slugs usados:`, result.slugs);
-            }
-        }
-        
-        // Si no se encontraron episodios renumerados, usar la lógica original
-        if (seasons.length === 0) {
-            const localStorageSeasons = detectSeasons(title);
-            const localStorageEpisodes = getTotalEpisodes(localStorageSeasons);
-            
-            if (localStorageSeasons.length > 0) {
-                seasons = localStorageSeasons;
-                totalEpisodes = localStorageEpisodes;
-                console.log(`✅ Usando temporadas de localStorage: ${seasons.length}, episodios: ${totalEpisodes}`);
-            } else {
-                let episodes = getKnownEpisodes(title);
-                if (episodes === 0) {
-                    episodes = media.episodes || 12;
-                }
-                if (episodes === 0) {
-                    episodes = 12;
-                }
-                seasons = [{ key: 'all-episodes', episodeCount: episodes }];
-                totalEpisodes = episodes;
-                console.log(`✅ Usando una sola temporada con ${totalEpisodes} episodios`);
-            }
-        }
+        // Si no hay tokens, usar datos de AniList o fallback
+        let episodes = media.episodes || getKnownEpisodes(title) || 12;
+        seasons = [{ key: 'all-episodes', episodeCount: episodes }];
+        totalEpisodes = episodes;
+        console.log(`ℹ️ Usando datos de AniList: ${totalEpisodes} episodios`);
     }
     
     console.log(`📊 "${title}" - Temporadas: ${seasons.length}, Episodios: ${totalEpisodes}`);
