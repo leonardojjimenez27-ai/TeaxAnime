@@ -3,7 +3,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { useState, useEffect } from 'react'
 import { GENRE_ES } from '@/lib/anilist'
 import { cleanDescription } from '@/lib/translator'
-import { getFamilyEpisodes, getMainAnimeId, groupTokensByFamily, getAnimeFamily, getAllMushokuEpisodes, getAllFamilyEpisodesRenumbered, getEpisodesForCurrentSeason } from '@/lib/anime/season-grouping'
+import { getEpisodesForCurrentSeason } from '@/lib/anime/season-grouping'
 
 // ============================================================
 // FUNCIONES DINÁMICAS PARA DETECTAR TEMPORADAS
@@ -32,68 +32,41 @@ function cleanTitle(title: string): string {
         .replace(/^-|-$/g, '');
 }
 
-function detectSeasons(animeTitle: string): { key: string; episodeCount: number }[] {
-    const tokens = loadTokens();
-    const clean = cleanTitle(animeTitle);
-    const seasons: { key: string; episodeCount: number }[] = [];
-    
-    const variants = [
-        clean,
-        animeTitle.toLowerCase().replace(/\s+/g, '-'),
-        animeTitle.toLowerCase().replace(/\s+/g, '_'),
-        animeTitle.toLowerCase().replace(/\s+/g, ''),
-    ];
-    
-    for (let i = 1; i <= 20; i++) {
-        variants.push(`${clean}-${i}`);
-        variants.push(`${clean}-season-${i}`);
-        variants.push(`${clean}-part-${i}`);
-        variants.push(`${clean}-${i}-season`);
-        variants.push(`${clean}-${i}-part`);
-    }
-    
-    variants.push(`${clean}-final-season`);
-    variants.push(`${clean}-the-final-season`);
-    variants.push(`${clean}-final`);
-    variants.push(`${clean}-the-final`);
-    variants.push(`${clean}-final-season-part-1`);
-    variants.push(`${clean}-final-season-part-2`);
-    variants.push(`${clean}-final-season-part-3`);
-    variants.push(`${clean}-the-final-season-part-1`);
-    variants.push(`${clean}-the-final-season-part-2`);
-    variants.push(`${clean}-the-final-season-part-3`);
-    
-    for (let i = 1; i <= 10; i++) {
-        variants.push(`${clean}-part-${i}`);
-        variants.push(`${clean}-parte-${i}`);
-    }
-    
-    for (let i = 1; i <= 10; i++) {
-        variants.push(`${clean}-cour-${i}`);
-        variants.push(`${clean}-season-${i}-cour-1`);
-        variants.push(`${clean}-season-${i}-cour-2`);
-    }
-    
-    const uniqueVariants = [...new Set(variants)];
-    
-    for (const variant of uniqueVariants) {
-        if (tokens[variant]) {
-            const episodeCount = Object.keys(tokens[variant]).length;
-            if (episodeCount > 0) {
-                const exists = seasons.some(s => s.key === variant);
-                if (!exists) {
-                    seasons.push({ key: variant, episodeCount });
-                }
-            }
-        }
-    }
-    
-    seasons.sort((a, b) => b.episodeCount - a.episodeCount);
-    return seasons;
+// ============================================================
+// 🔥 CACHÉ DE MINIATURAS EN LOCALSTORAGE
+// ============================================================
+
+function getThumbnailCacheKey(animeId: string, episodeNumber: number): string {
+    return `thumbnail_${animeId}_${episodeNumber}`;
 }
 
-function getTotalEpisodes(seasons: { key: string; episodeCount: number }[]): number {
-    return seasons.reduce((sum, s) => sum + s.episodeCount, 0);
+function getCachedThumbnail(animeId: string, episodeNumber: number): string | null {
+    try {
+        const key = getThumbnailCacheKey(animeId, episodeNumber);
+        const cached = localStorage.getItem(key);
+        if (cached) {
+            const data = JSON.parse(cached);
+            if (Date.now() - data.timestamp < 30 * 24 * 60 * 60 * 1000) {
+                return data.url;
+            }
+            localStorage.removeItem(key);
+        }
+    } catch (e) {
+        console.error('Error leyendo caché:', e);
+    }
+    return null;
+}
+
+function setCachedThumbnail(animeId: string, episodeNumber: number, url: string): void {
+    try {
+        const key = getThumbnailCacheKey(animeId, episodeNumber);
+        localStorage.setItem(key, JSON.stringify({
+            url: url,
+            timestamp: Date.now()
+        }));
+    } catch (e) {
+        console.error('Error guardando caché:', e);
+    }
 }
 
 // ============================================================
@@ -137,58 +110,161 @@ function getKnownEpisodes(title: string): number {
 }
 
 // ============================================================
-// OBTENER MAL ID
+// 🔥 FUNCIONES PARA OBTENER MINIATURAS DE EPISODIOS
 // ============================================================
 
-async function getMalId(media: any, title: string): Promise<number | null> {
-    if (media.externalLinks) {
-        const malLink = media.externalLinks.find((link: any) => 
-            link.site === 'MyAnimeList' || 
-            link.site === 'MAL' ||
-            link.url?.includes('myanimelist.net/anime')
-        );
-        if (malLink) {
-            const match = malLink.url.match(/anime\/(\d+)/);
-            if (match) {
-                return parseInt(match[1]);
+function getThumbnailFromAniList(streamingEpisodes: any[], episodeNumber: number): string | null {
+    for (const ep of streamingEpisodes) {
+        if (ep.title) {
+            const match = ep.title.match(/\d+/);
+            if (match && parseInt(match[0]) === episodeNumber) {
+                if (ep.thumbnail) {
+                    return ep.thumbnail;
+                }
             }
         }
     }
-    
-    const knownIds: Record<string, number> = {
-        'one piece': 21,
-        'naruto': 20,
-        'naruto shippuden': 1735,
-        'bleach': 269,
-        'attack on titan': 16498,
-        'boku no hero academia': 38000,
-        'my hero academia': 38000,
-        'hunter x hunter': 11061,
-        'hunter x hunter 2011': 11061,
-        'death note': 1535,
-        'fullmetal alchemist brotherhood': 5114,
-        'sword art online': 11757,
-        'tokyo ghoul': 22319,
-        'dragon ball': 223,
-        'dragon ball z': 813,
-        'dragon ball super': 30694,
-        'jujutsu kaisen': 48549,
-        'demon slayer': 38000,
-        'kimetsu no yaiba': 38000,
-    };
-    
-    const titleLower = title.toLowerCase().trim();
-    for (const [key, malId] of Object.entries(knownIds)) {
-        if (titleLower.includes(key)) {
-            return malId;
+    return null;
+}
+
+function extractThumbnailFromBlogger(videoUrl: string): string | null {
+    if (!videoUrl || !videoUrl.includes('blogger.com/video.g')) return null;
+    if (videoUrl.includes('?')) {
+        return `${videoUrl}&thumbnail=1`;
+    }
+    return `${videoUrl}?thumbnail=1`;
+}
+
+function extractThumbnailFromYouTube(videoUrl: string): string | null {
+    if (!videoUrl) return null;
+    const patterns = [
+        /(?:youtube\.com\/embed\/|youtu\.be\/|youtube\.com\/watch\?v=)([^?&]+)/,
+        /youtube\.com\/v\/([^?&]+)/,
+    ];
+    for (const pattern of patterns) {
+        const match = videoUrl.match(pattern);
+        if (match) {
+            return `https://img.youtube.com/vi/${match[1]}/hqdefault.jpg`;
         }
     }
-    
+    return null;
+}
+
+function extractThumbnailFromVimeo(videoUrl: string): string | null {
+    if (!videoUrl) return null;
+    const match = videoUrl.match(/player\.vimeo\.com\/video\/(\d+)/);
+    if (match) {
+        return `https://vumbnail.com/${match[1]}.jpg`;
+    }
+    return null;
+}
+
+function extractThumbnailFromDailymotion(videoUrl: string): string | null {
+    if (!videoUrl) return null;
+    const match = videoUrl.match(/dailymotion\.com\/embed\/video\/([^?&]+)/);
+    if (match) {
+        return `https://www.dailymotion.com/thumbnail/video/${match[1]}`;
+    }
+    return null;
+}
+
+function getThumbnailFromToken(token: string): string | null {
+    if (!token) return null;
+    const sources = [
+        extractThumbnailFromBlogger,
+        extractThumbnailFromYouTube,
+        extractThumbnailFromVimeo,
+        extractThumbnailFromDailymotion,
+    ];
+    for (const source of sources) {
+        const thumbnail = source(token);
+        if (thumbnail) return thumbnail;
+    }
     return null;
 }
 
 // ============================================================
-// FUNCIÓN PARA OBTENER DATOS DEL ANIME
+// 🔥 OBTENER MINIATURA DE UN EPISODIO (CON CACHÉ)
+// ============================================================
+
+async function fetchEpisodeThumbnail(
+    animeId: string,
+    animeSlug: string,
+    episodeNumber: number,
+    streamingEpisodes: any[],
+    tokens: Record<string, Record<number, string>>
+): Promise<string | null> {
+    console.log(`🔍 Buscando thumbnail para episodio ${episodeNumber}...`);
+    
+    // 1. Verificar caché primero
+    const cached = getCachedThumbnail(animeId, episodeNumber);
+    if (cached) {
+        console.log(`✅ Thumbnail en caché para ep ${episodeNumber}`);
+        return cached;
+    }
+    
+    // 2. Intentar desde AniList streamingEpisodes
+    const anilistThumbnail = getThumbnailFromAniList(streamingEpisodes, episodeNumber);
+    if (anilistThumbnail) {
+        console.log(`✅ Thumbnail AniList para ep ${episodeNumber}`);
+        setCachedThumbnail(animeId, episodeNumber, anilistThumbnail);
+        return anilistThumbnail;
+    }
+    
+    // 3. Intentar desde el token (iframe) del episodio
+    for (const [slug, episodes] of Object.entries(tokens)) {
+        if (slug.includes(animeSlug) || animeSlug.includes(slug)) {
+            if (episodes[episodeNumber]) {
+                const thumbnail = getThumbnailFromToken(episodes[episodeNumber]);
+                if (thumbnail) {
+                    console.log(`✅ Thumbnail desde token para ep ${episodeNumber}`);
+                    setCachedThumbnail(animeId, episodeNumber, thumbnail);
+                    return thumbnail;
+                }
+            }
+        }
+    }
+    
+    // 4. Scraping de VerAnimeOnline (solo para primeros 50 episodios)
+    const MAX_SCRAP = 50;
+    if (episodeNumber <= MAX_SCRAP) {
+        try {
+            const url = `https://veranimeonline.co/episodio/${animeSlug}-episodio-${episodeNumber}/`;
+            const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+            
+            const response = await fetch(proxyUrl, { signal: AbortSignal.timeout(5000) });
+            if (response.ok) {
+                const html = await response.text();
+                const patterns = [
+                    /<meta\s+property="og:image"\s+content="([^"]+)"/i,
+                    /<meta\s+name="twitter:image"\s+content="([^"]+)"/i,
+                    /<img[^>]+class="[^"]*(?:poster|thumb|cover|episode-img)[^"]*"[^>]+src="([^"]+)"/i,
+                    /<img[^>]+src="([^"]+)"[^>]+alt="[^"]*(?:episodio|episode|capitulo)\s*(\d+)"/i,
+                    /<div[^>]+class="[^"]*video-thumbnail[^"]*"[^>]+style="[^"]*background-image:url\(([^)]+)\)/i,
+                ];
+                for (const pattern of patterns) {
+                    const match = html.match(pattern);
+                    if (match) {
+                        let thumbnail = match[1];
+                        thumbnail = thumbnail.replace(/^url\(['"]?|['"]?\)$/g, '');
+                        if (thumbnail.startsWith('//')) thumbnail = 'https:' + thumbnail;
+                        console.log(`✅ Thumbnail VerAnimeOnline para ep ${episodeNumber}`);
+                        setCachedThumbnail(animeId, episodeNumber, thumbnail);
+                        return thumbnail;
+                    }
+                }
+            }
+        } catch (error) {
+            console.log(`⚠️ Error scraping VerAnimeOnline para ep ${episodeNumber}:`, error);
+        }
+    }
+    
+    console.log(`❌ No se encontró thumbnail para episodio ${episodeNumber}`);
+    return null;
+}
+
+// ============================================================
+// OBTENER DATOS DEL ANIME
 // ============================================================
 
 async function getAnimeInfo(id: number) {
@@ -237,6 +313,12 @@ async function getAnimeInfo(id: number) {
                             site
                             type
                         }
+                        streamingEpisodes {
+                            title
+                            thumbnail
+                            url
+                            site
+                        }
                     }
                 }
             `,
@@ -252,46 +334,85 @@ async function getAnimeInfo(id: number) {
     
     console.log('📌 Título obtenido:', title);
     
-    const malId = await getMalId(media, title);
-    console.log('📌 MAL ID:', malId);
+    const streamingEpisodes = media.streamingEpisodes || [];
+    const tokens = loadTokens();
+    const clean = cleanTitle(title);
+    const animeIdStr = String(id);
+    
+    // Obtener el slug principal
+    let mainSlug = clean;
+    const matchingSlugs = Object.keys(tokens).filter(s => 
+        s.includes(clean) || clean.includes(s)
+    );
+    if (matchingSlugs.length > 0) {
+        mainSlug = matchingSlugs[0];
+    }
+    
+    console.log(`📂 Slug principal: "${mainSlug}"`);
+    
+    // 🔥 SOLO cargar thumbnails de AniList y caché (rápido)
+    const episodeThumbnails: Record<number, string> = {};
+    const totalEpisodes = media.episodes || 12;
+    
+    console.log(`📊 Total de episodios: ${totalEpisodes}`);
+    
+    // 1. Cargar desde caché
+    let fromCache = 0;
+    for (let i = 1; i <= Math.min(totalEpisodes, 200); i++) {
+        const cached = getCachedThumbnail(animeIdStr, i);
+        if (cached) {
+            episodeThumbnails[i] = cached;
+            fromCache++;
+            console.log(`📸 Caché: episodio ${i} tiene miniatura`);
+        }
+    }
+    console.log(`📸 Thumbnails desde caché: ${fromCache}`);
+    
+    // 2. Cargar desde AniList (los que no están en caché)
+    let fromAniList = 0;
+    for (const ep of streamingEpisodes) {
+        if (ep.title) {
+            const match = ep.title.match(/\d+/);
+            if (match) {
+                const epNum = parseInt(match[0]);
+                if (ep.thumbnail && epNum <= totalEpisodes && !episodeThumbnails[epNum]) {
+                    episodeThumbnails[epNum] = ep.thumbnail;
+                    setCachedThumbnail(animeIdStr, epNum, ep.thumbnail);
+                    fromAniList++;
+                    console.log(`📸 AniList: episodio ${epNum} tiene miniatura`);
+                }
+            }
+        }
+    }
+    console.log(`📸 Thumbnails desde AniList: ${fromAniList}`);
+    console.log(`📸 Thumbnails totales iniciales: ${Object.keys(episodeThumbnails).length}`);
+    
+    // Mostrar qué episodios tienen miniatura
+    const thumbKeys = Object.keys(episodeThumbnails).map(Number).sort((a, b) => a - b);
+    console.log(`📸 Episodios con miniatura: ${thumbKeys.join(', ')}`);
     
     let seasons: { key: string; episodeCount: number }[] = [];
-    let totalEpisodes = 0;
     let totalEpisodesFromTokens = 0;
     
-    // ============================================================
-    // 🔥 NUEVA LÓGICA: Obtener episodios SOLO de la temporada actual
-    // ============================================================
-    
-    const tokens = loadTokens();
-    
-    // Obtener episodios para esta temporada específica usando la nueva función
     const seasonResult = getEpisodesForCurrentSeason(tokens, title, String(id));
     
     if (seasonResult.total > 0) {
         totalEpisodesFromTokens = seasonResult.total;
         seasons = [{ key: seasonResult.seasonKey || 'all-episodes', episodeCount: seasonResult.total }];
-        totalEpisodes = seasonResult.total;
-        console.log(`✅ Episodios encontrados para "${title}": ${totalEpisodes}`);
+        console.log(`✅ Episodios encontrados para "${title}": ${seasonResult.total}`);
     } else {
-        // Si no hay tokens, usar datos de AniList o fallback
         let episodes = media.episodes || getKnownEpisodes(title) || 12;
         seasons = [{ key: 'all-episodes', episodeCount: episodes }];
-        totalEpisodes = episodes;
-        console.log(`ℹ️ Usando datos de AniList: ${totalEpisodes} episodios`);
+        console.log(`ℹ️ Usando datos de AniList: ${episodes} episodios`);
     }
-    
-    console.log(`📊 "${title}" - Temporadas: ${seasons.length}, Episodios: ${totalEpisodes}`);
-    console.log('🔍 === FIN getAnimeInfo ===');
     
     return {
         id: media.id,
-        malId: malId,
         title: title,
         image: media.coverImage.extraLarge || media.coverImage.large,
         bannerImage: media.bannerImage,
         episodes: media.episodes || 0,
-        totalEpisodes: totalEpisodes,
+        totalEpisodes: seasonResult.total || media.episodes || 12,
         totalEpisodesFromTokens: totalEpisodesFromTokens,
         genres: media.genres || [],
         averageScore: media.averageScore,
@@ -306,6 +427,10 @@ async function getAnimeInfo(id: number) {
         seasons: seasons,
         hasSeasons: seasons.length > 0 && seasons[0]?.key !== 'all-episodes',
         titleForNames: title,
+        episodeThumbnails: episodeThumbnails,
+        animeSlug: mainSlug,
+        streamingEpisodes: streamingEpisodes,
+        tokens: tokens,
     }
 }
 
@@ -320,6 +445,10 @@ function AnimeDetailComponent() {
     const [error, setError] = useState<string | null>(null)
     const [selectedSeason, setSelectedSeason] = useState<number>(0)
     const [currentPage, setCurrentPage] = useState<number>(1)
+    // 🔥 Estados para lazy loading
+    const [loadedThumbnails, setLoadedThumbnails] = useState<Record<number, string>>({})
+    const [loadingThumbnails, setLoadingThumbnails] = useState<Set<number>>(new Set())
+    const [isLoadingPage, setIsLoadingPage] = useState(false)
     const EPISODES_PER_PAGE = 10
 
     useEffect(() => {
@@ -330,10 +459,13 @@ function AnimeDetailComponent() {
                 console.log('🔄 Cargando anime ID:', id)
                 const data = await getAnimeInfo(Number(id))
                 console.log('✅ Anime cargado:', data.title)
-                console.log('📊 Temporadas:', data.seasons?.length || 0)
-                console.log('📊 Episodios totales:', data.totalEpisodes)
-                console.log(`📊 Episodios desde tokens: ${data.totalEpisodesFromTokens || 0}`)
+                console.log('📸 Thumbnails iniciales:', Object.keys(data.episodeThumbnails || {}).length)
+                // Log para ver qué episodios tienen miniatura
+                const keys = Object.keys(data.episodeThumbnails || {}).map(Number).sort((a, b) => a - b);
+                console.log('📸 Episodios con miniatura inicial:', keys);
                 setAnime(data)
+                // Cargar miniaturas de la primera página
+                await loadThumbnailsForPage(1, data)
             } catch (err) {
                 console.error('❌ Error:', err)
                 setError('Error al cargar el anime')
@@ -344,15 +476,157 @@ function AnimeDetailComponent() {
         loadAnime()
     }, [id])
 
+    // ============================================================
+    // 🔥 CARGAR MINIATURAS BAJO DEMANDA (SOLO EPISODIOS VISIBLES)
+    // ============================================================
+
+    const loadThumbnailsForPage = async (page: number, animeData: any = anime) => {
+        if (!animeData || isLoadingPage) return;
+        
+        setIsLoadingPage(true);
+        
+        try {
+            const total = animeData.totalEpisodes || 0;
+            const startIndex = (page - 1) * EPISODES_PER_PAGE;
+            const endIndex = Math.min(startIndex + EPISODES_PER_PAGE, total);
+            
+            // Obtener números de episodios de esta página
+            const episodeNumbers: number[] = [];
+            for (let i = startIndex + 1; i <= endIndex; i++) {
+                episodeNumbers.push(i);
+            }
+            
+            console.log(`📸 Página ${page}: episodios ${episodeNumbers[0]}-${episodeNumbers[episodeNumbers.length-1]}`);
+            console.log(`📸 Thumbnails existentes:`, Object.keys(animeData.episodeThumbnails || {}));
+            
+            // Filtrar episodios que ya tienen miniatura
+            const toLoad = episodeNumbers.filter(num => 
+                !animeData.episodeThumbnails?.[num] && 
+                !loadedThumbnails[num] && 
+                !loadingThumbnails.has(num)
+            );
+            
+            console.log(`📸 Episodios a cargar: ${toLoad.length}`);
+            
+            if (toLoad.length === 0) {
+                console.log(`📸 No hay miniaturas nuevas para cargar en página ${page}`);
+                setIsLoadingPage(false);
+                return;
+            }
+            
+            console.log(`📸 Cargando ${toLoad.length} miniaturas para página ${page}`);
+            
+            // Marcar como cargando
+            setLoadingThumbnails(prev => {
+                const newSet = new Set(prev);
+                toLoad.forEach(num => newSet.add(num));
+                return newSet;
+            });
+            
+            // Cargar miniaturas en lotes de 3
+            const batchSize = 3;
+            const results: Record<number, string> = {};
+            
+            for (let i = 0; i < toLoad.length; i += batchSize) {
+                const batch = toLoad.slice(i, i + batchSize);
+                const batchPromises = batch.map(async (num) => {
+                    const thumb = await fetchEpisodeThumbnail(
+                        id,
+                        animeData.animeSlug || cleanTitle(animeData.title),
+                        num,
+                        animeData.streamingEpisodes || [],
+                        animeData.tokens || {}
+                    );
+                    if (thumb) {
+                        results[num] = thumb;
+                        console.log(`📸 Episodio ${num}: miniatura cargada ✅`);
+                    } else {
+                        console.log(`📸 Episodio ${num}: sin miniatura ❌`);
+                    }
+                    return { num, thumb };
+                });
+                await Promise.all(batchPromises);
+            }
+            
+            // Actualizar estado
+            setLoadedThumbnails(prev => ({ ...prev, ...results }));
+            setLoadingThumbnails(prev => {
+                const newSet = new Set(prev);
+                toLoad.forEach(num => newSet.delete(num));
+                return newSet;
+            });
+            
+            console.log(`✅ ${Object.keys(results).length} miniaturas cargadas para página ${page}`);
+            
+        } catch (error) {
+            console.error('Error cargando miniaturas:', error);
+        } finally {
+            setIsLoadingPage(false);
+        }
+    };
+
+    // Cargar miniaturas cuando cambia la página
+    useEffect(() => {
+        if (anime && !loading) {
+            loadThumbnailsForPage(currentPage);
+        }
+    }, [currentPage, anime, loading]);
+
+    // ============================================================
+    // FUNCIONES DE NAVEGACIÓN
+    // ============================================================
+
     const changeSeason = (index: number) => {
-        setSelectedSeason(index)
-        setCurrentPage(1)
-    }
+        setSelectedSeason(index);
+        setCurrentPage(1);
+        setLoadedThumbnails({});
+        setLoadingThumbnails(new Set());
+        if (anime) {
+            setTimeout(() => loadThumbnailsForPage(1), 100);
+        }
+    };
 
     const changePage = (page: number) => {
-        setCurrentPage(page)
-        document.getElementById('episode-list')?.scrollIntoView({ behavior: 'smooth' })
-    }
+        setCurrentPage(page);
+        document.getElementById('episode-list')?.scrollIntoView({ behavior: 'smooth' });
+    };
+
+    // ============================================================
+    // 🔥 OBTENER MINIATURA DEL EPISODIO
+    // ============================================================
+
+    const getEpisodeThumbnail = (episodeNumber: number): string => {
+        // 1. Thumbnail inicial (de AniList o caché)
+        if (anime?.episodeThumbnails?.[episodeNumber]) {
+            console.log(`📸 Episodio ${episodeNumber}: usando miniatura inicial`);
+            return anime.episodeThumbnails[episodeNumber];
+        }
+        // 2. Thumbnail cargado bajo demanda
+        if (loadedThumbnails[episodeNumber]) {
+            console.log(`📸 Episodio ${episodeNumber}: usando miniatura cargada`);
+            return loadedThumbnails[episodeNumber];
+        }
+        // 3. Banner del anime (fallback)
+        if (anime?.bannerImage) {
+            return anime.bannerImage;
+        }
+        // 4. Portada del anime (fallback)
+        if (anime?.image) {
+            return anime.image;
+        }
+        // 5. UI Avatars (último recurso)
+        const colors = ['1a1a2e', '16213e', '0f3460', '533483', 'e94560', 'f5a623', '4a90d9', '7b68ee', '00b894', 'e17055', '2d3436', '6c5ce7'];
+        const color = colors[episodeNumber % colors.length];
+        return `https://ui-avatars.com/api/?name=EP+${episodeNumber}&size=300&background=${color}&color=ffffff&font-size=0.5&bold=true&length=5`;
+    };
+
+    const hasRealThumbnail = (episodeNumber: number): boolean => {
+        return !!(anime?.episodeThumbnails?.[episodeNumber] || loadedThumbnails[episodeNumber]);
+    };
+
+    const isLoadingThumbnail = (episodeNumber: number): boolean => {
+        return loadingThumbnails.has(episodeNumber);
+    };
 
     if (loading) {
         return (
@@ -421,6 +695,14 @@ function AnimeDetailComponent() {
         }
         return `Temporada ${index + 1}`;
     };
+
+    // Contar miniaturas totales
+    const initialThumbCount = Object.keys(anime.episodeThumbnails || {}).length;
+    const loadedThumbCount = Object.keys(loadedThumbnails).length;
+    const totalThumbnails = initialThumbCount + loadedThumbCount;
+    const thumbnailsInPage = paginatedEpisodes.filter(num => hasRealThumbnail(num)).length;
+
+    console.log(`📸 Estadísticas: inicial=${initialThumbCount}, cargadas=${loadedThumbCount}, total=${totalThumbnails}, en página=${thumbnailsInPage}`);
 
     if (episodeList.length === 0) {
         return (
@@ -511,10 +793,10 @@ function AnimeDetailComponent() {
                                 <p className="font-semibold">{anime.seasons.length}</p>
                             </div>
                         )}
-                        {anime.malId && (
+                        {totalThumbnails > 0 && (
                             <div>
-                                <span className="text-gray-400">MAL ID:</span>
-                                <p className="font-semibold">{anime.malId}</p>
+                                <span className="text-gray-400">Miniaturas:</span>
+                                <p className="font-semibold text-blue-400">{totalThumbnails}</p>
                             </div>
                         )}
                         {anime.status && (
@@ -573,7 +855,7 @@ function AnimeDetailComponent() {
             </div>
 
             {/* ============================================================ */}
-            {/* LISTA DE EPISODIOS */}
+            {/* LISTA DE EPISODIOS CON MINIATURAS LAZY LOADING */}
             {/* ============================================================ */}
             <div className="mt-8" id="episode-list">
                 <h2 className="text-2xl font-bold mb-4">
@@ -585,9 +867,15 @@ function AnimeDetailComponent() {
                         </span>
                     )}
                     {anime.totalEpisodesFromTokens > 0 && (
-                        <span className="text-xs text-green-400 ml-2">
-                            ✅ Extraídos
+                        <span className="text-xs text-green-400 ml-2">✅ Extraídos</span>
+                    )}
+                    {totalThumbnails > 0 && (
+                        <span className="text-xs text-blue-400 ml-2">
+                            📸 {totalThumbnails} miniaturas
                         </span>
+                    )}
+                    {isLoadingPage && (
+                        <span className="text-xs text-yellow-400 ml-2">⏳ Cargando...</span>
                     )}
                 </h2>
                 
@@ -623,6 +911,11 @@ function AnimeDetailComponent() {
                 <div className="flex justify-between items-center mb-3">
                     <span className="text-sm text-gray-400">
                         Mostrando episodios {startIndex + 1} - {endIndex} de {episodeList.length}
+                        {thumbnailsInPage > 0 && (
+                            <span className="text-blue-400 ml-2">
+                                ({thumbnailsInPage} con miniatura)
+                            </span>
+                        )}
                     </span>
                     <div className="flex gap-2">
                         <button
@@ -667,30 +960,69 @@ function AnimeDetailComponent() {
                     </div>
                 </div>
 
+                {/* 🔥 GRID DE EPISODIOS CON LAZY LOADING */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-                    {paginatedEpisodes.map((num: number) => (
-                        <Link
-                            key={num}
-                            to="/ver/$id/$episodeId"
-                            params={{ id: String(anime.id), episodeId: String(num) }}
-                            className="bg-gray-800 rounded-lg p-3 hover:bg-gray-700 transition group"
-                        >
-                            <div className="relative aspect-video bg-gray-700 rounded-lg overflow-hidden mb-2">
-                                <div className="w-full h-full flex items-center justify-center text-gray-500 group-hover:text-gray-400">
-                                    <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
+                    {paginatedEpisodes.map((num: number) => {
+                        const thumbnail = getEpisodeThumbnail(num);
+                        const real = hasRealThumbnail(num);
+                        const loading = isLoadingThumbnail(num);
+                        
+                        // Log para depurar cada episodio
+                        if (real) {
+                            console.log(`📸 Episodio ${num} tiene miniatura: ${thumbnail?.substring(0, 50)}...`);
+                        }
+                        
+                        return (
+                            <Link
+                                key={num}
+                                to="/ver/$id/$episodeId"
+                                params={{ id: String(anime.id), episodeId: String(num) }}
+                                className="bg-gray-800 rounded-lg overflow-hidden hover:bg-gray-700 transition group relative"
+                            >
+                                <div className="relative aspect-video bg-gray-700 overflow-hidden">
+                                    {loading ? (
+                                        <div className="w-full h-full flex items-center justify-center bg-gray-700">
+                                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                                        </div>
+                                    ) : (
+                                        <img
+                                            src={thumbnail}
+                                            alt={`Episodio ${num} de ${anime.title}`}
+                                            className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                                            loading="lazy"
+                                            onError={(e) => {
+                                                console.log(`⚠️ Error cargando miniatura para episodio ${num}`);
+                                                if (anime.bannerImage) {
+                                                    e.currentTarget.src = anime.bannerImage;
+                                                }
+                                            }}
+                                            onLoad={() => {
+                                                console.log(`✅ Miniatura cargada para episodio ${num}`);
+                                            }}
+                                        />
+                                    )}
+                                    {real && !loading && (
+                                        <span className="absolute top-1 right-1 px-1.5 py-0.5 bg-blue-600/80 text-white text-[8px] rounded">
+                                            📸
+                                        </span>
+                                    )}
+                                    <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 transition">
+                                        <svg className="w-12 h-12 text-white opacity-0 group-hover:opacity-100 transition" fill="currentColor" viewBox="0 0 24 24">
+                                            <path d="M8 5v14l11-7z" />
+                                        </svg>
+                                    </div>
+                                    <span className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-black/70 text-white text-[10px] rounded">
+                                        Ep. {num}
+                                    </span>
                                 </div>
-                                <span className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-black/70 text-white text-[10px] rounded">
-                                    Ep. {num}
-                                </span>
-                            </div>
-                            <p className="text-sm font-medium truncate text-center">
-                                Episodio {num}
-                            </p>
-                        </Link>
-                    ))}
+                                <div className="p-2">
+                                    <p className="text-sm font-medium truncate text-center">
+                                        Episodio {num}
+                                    </p>
+                                </div>
+                            </Link>
+                        );
+                    })}
                 </div>
 
                 {totalPages > 1 && (
@@ -715,6 +1047,26 @@ function AnimeDetailComponent() {
                     </div>
                 )}
             </div>
+            
+            {/* ============================================================ */}
+            {/* MENSAJE INFORMATIVO */}
+            {/* ============================================================ */}
+            {totalThumbnails === 0 && anime.totalEpisodes > 0 && (
+                <div className="mt-4 p-4 bg-yellow-900/20 border border-yellow-500/30 rounded-lg">
+                    <p className="text-yellow-400 text-sm">
+                        ⚠️ No se encontraron miniaturas para este anime. 
+                        Las miniaturas se cargarán automáticamente cuando estén disponibles.
+                    </p>
+                </div>
+            )}
+            {totalThumbnails > 0 && totalThumbnails < anime.totalEpisodes && (
+                <div className="mt-4 p-4 bg-blue-900/20 border border-blue-500/30 rounded-lg">
+                    <p className="text-blue-400 text-sm">
+                        📸 {totalThumbnails} de {anime.totalEpisodes} episodios tienen miniatura.
+                        {isLoadingPage ? ' Cargando más...' : ' Las demás se cargarán al navegar.'}
+                    </p>
+                </div>
+            )}
         </div>
     )
 }
