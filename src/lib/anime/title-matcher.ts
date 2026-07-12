@@ -106,9 +106,23 @@ export const TITLE_MAPPINGS: Record<string, string> = {
     'tokyo ghoul': 'tokyo ghoul',
     'spy x family': 'spy x family',
     'sword art online': 'sword art online',
+    'sword art online ii': 'sword art online ii',
+    'sword art online alicization': 'sword art online alicization',
+    'sword art online war of underworld': 'sword art online war of underworld',
     'hunter x hunter': 'hunter x hunter',
     'bleach': 'bleach',
     'one piece': 'one piece',
+    'naruto': 'naruto',
+    'naruto shippuden': 'naruto shippuden',
+    'dragon ball': 'dragon ball',
+    'dragon ball z': 'dragon ball z',
+    'dragon ball gt': 'dragon ball gt',
+    'dragon ball super': 'dragon ball super',
+    'dragon ball daima': 'dragon ball daima',
+    'dragon ball heroes': 'dragon ball heroes',
+    'fairy tail': 'fairy tail',
+    'fairy tail 2014': 'fairy tail 2014',
+    'fairy tail final series': 'fairy tail final series',
 };
 
 export function getNormalizedTitle(title: string, forAniList: boolean = false): string {
@@ -162,7 +176,7 @@ export const ANILIST_ID_TO_SLUG: Record<string, {
     '21': { 
         slug: 'one-piece', 
         season: 1, 
-        totalEpisodes: 1168,
+        totalEpisodes: 1122,
         title: 'One Piece'
     },
     
@@ -321,7 +335,7 @@ export const ANILIST_ID_TO_SLUG: Record<string, {
     },
     
     // ============================================================
-    // SWORD ART ONLINE
+    // SWORD ART ONLINE - TODAS LAS TEMPORADAS
     // ============================================================
     '11757': { 
         slug: 'sword-art-online', 
@@ -329,13 +343,13 @@ export const ANILIST_ID_TO_SLUG: Record<string, {
         totalEpisodes: 25,
         title: 'Sword Art Online'
     },
-    '11757_2': { 
+    '20594': { 
         slug: 'sword-art-online-ii', 
         season: 2, 
         totalEpisodes: 24,
         title: 'Sword Art Online II'
     },
-    '11757_3': { 
+    '100182': { 
         slug: 'sword-art-online-alicization', 
         season: 3, 
         totalEpisodes: 24,
@@ -344,8 +358,14 @@ export const ANILIST_ID_TO_SLUG: Record<string, {
     '108759': { 
         slug: 'sword-art-online-alicization-war-of-underworld', 
         season: 4, 
-        totalEpisodes: 23,
+        totalEpisodes: 12,
         title: 'Sword Art Online: Alicization - War of Underworld'
+    },
+    '114308': { 
+        slug: 'sword-art-online-alicization-war-of-underworld-2', 
+        season: 4, 
+        totalEpisodes: 11,
+        title: 'Sword Art Online: Alicization - War of Underworld Part 2'
     },
     
     // ============================================================
@@ -397,27 +417,21 @@ export const ANILIST_ID_TO_SLUG: Record<string, {
         totalEpisodes: 28,
         title: 'Attack on Titan: The Final Season'
     },
-    '16498_4_part2': { 
-        slug: 'attack-on-titan-the-final-season-part-2', 
-        season: 4, 
-        totalEpisodes: 12,
-        title: 'Attack on Titan: The Final Season Part 2'
-    },
     
     // ============================================================
     // BLUE LOCK
     // ============================================================
-    '146800': { 
+    '137822': { 
         slug: 'blue-lock', 
         season: 1, 
         totalEpisodes: 24,
         title: 'Blue Lock'
     },
-    '146800_2': { 
+    '163146': { 
         slug: 'blue-lock-vs-u-20-japan', 
         season: 2, 
         totalEpisodes: 14,
-        title: 'Blue Lock vs U-20 Japan'
+        title: 'Blue Lock Season 2'
     },
     
     // ============================================================
@@ -431,7 +445,7 @@ export const ANILIST_ID_TO_SLUG: Record<string, {
     },
     
     // ============================================================
-    // MY HERO ACADEMIA (BOKU NO HERO) - ACTUALIZADO CON IDs CORRECTOS
+    // MY HERO ACADEMIA (BOKU NO HERO)
     // ============================================================
     '21459': { 
         slug: 'boku-no-hero-academia', 
@@ -480,6 +494,84 @@ export const ANILIST_ID_TO_SLUG: Record<string, {
         season: 8, 
         totalEpisodes: 11,
         title: 'My Hero Academia FINAL SEASON'
+    },
+    
+    // ============================================================
+    // NARUTO
+    // ============================================================
+    '20': { 
+        slug: 'naruto', 
+        season: 1, 
+        totalEpisodes: 220,
+        title: 'Naruto'
+    },
+    '1735': { 
+        slug: 'naruto-shippuden', 
+        season: 2, 
+        totalEpisodes: 500,
+        title: 'Naruto: Shippuden'
+    },
+    
+    // ============================================================
+    // DRAGON BALL
+    // ============================================================
+    '223': { 
+        slug: 'dragon-ball', 
+        season: 1, 
+        totalEpisodes: 153,
+        title: 'Dragon Ball'
+    },
+    '813': { 
+        slug: 'dragon-ball-z', 
+        season: 2, 
+        totalEpisodes: 291,
+        title: 'Dragon Ball Z'
+    },
+    '225': { 
+        slug: 'dragon-ball-gt', 
+        season: 3, 
+        totalEpisodes: 64,
+        title: 'Dragon Ball GT'
+    },
+    '21175': { 
+        slug: 'dragon-ball-super', 
+        season: 4, 
+        totalEpisodes: 131,
+        title: 'Dragon Ball Super'
+    },
+    '170083': { 
+        slug: 'dragon-ball-daima', 
+        season: 5, 
+        totalEpisodes: 20,
+        title: 'Dragon Ball Daima'
+    },
+    '102352': { 
+        slug: 'dragon-ball-heroes', 
+        season: 6, 
+        totalEpisodes: 56,
+        title: 'Super Dragon Ball Heroes'
+    },
+    
+    // ============================================================
+    // FAIRY TAIL
+    // ============================================================
+    '6702': { 
+        slug: 'fairy-tail', 
+        season: 1, 
+        totalEpisodes: 175,
+        title: 'Fairy Tail'
+    },
+    '20626': { 
+        slug: 'fairy-tail-2014', 
+        season: 2, 
+        totalEpisodes: 102,
+        title: 'Fairy Tail 2014'
+    },
+    '99749': { 
+        slug: 'fairy-tail-final-series', 
+        season: 3, 
+        totalEpisodes: 51,
+        title: 'Fairy Tail Final Series'
     },
 };
 

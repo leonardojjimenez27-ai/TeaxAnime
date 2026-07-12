@@ -1,5 +1,5 @@
 // src/routes/ver.$id.$episodeId.tsx
-import { createFileRoute, Link, useNavigate, useRouter } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useState, useEffect, useRef } from 'react'
 import { animeApi } from '@/lib/anilist'
 import { getFamilyEpisodes, groupTokensByFamily, getAnimeFamily, getEpisodesForCurrentSeason } from '@/lib/anime/season-grouping'
@@ -57,6 +57,7 @@ function getEpisodeUrl(animeTitle: string, episodeId: string, animeId?: string):
             console.log(`✅ Usando combinación automática: ${combined.total} episodios`);
             console.log(`📂 Slugs combinados:`, combined.slugs);
             
+            // 🔥 MAPEO: Encontrar en qué slug está el episodio
             let counter = 1;
             for (const slug of combined.slugs) {
                 if (tokens[slug]) {
@@ -64,6 +65,7 @@ function getEpisodeUrl(animeTitle: string, episodeId: string, animeId?: string):
                     const episodeNumbers = Object.keys(episodes).map(Number).sort((a, b) => a - b);
                     console.log(`📺 "${slug}": ${episodeNumbers.length} episodios (${episodeNumbers.join(', ')})`);
                     
+                    // Verificar si el episodio buscado está en este rango
                     if (episodeNum >= counter && episodeNum < counter + episodeNumbers.length) {
                         const relativeIndex = episodeNum - counter;
                         const originalEpisodeNumber = episodeNumbers[relativeIndex];
@@ -76,6 +78,7 @@ function getEpisodeUrl(animeTitle: string, episodeId: string, animeId?: string):
                 }
             }
             
+            // Si no encontró con el mapeo, intentar búsqueda directa en todos los slugs combinados
             for (const slug of combined.slugs) {
                 if (tokens[slug] && tokens[slug][episodeNum]) {
                     console.log(`✅ Episodio encontrado en "${slug}" (directo)`);
@@ -99,6 +102,7 @@ function getEpisodeUrl(animeTitle: string, episodeId: string, animeId?: string):
                 return tokens[slug][episodeNum];
             }
             
+            // Buscar en slugs relacionados (ej: attack-on-titan-3-part-2)
             const allSlugs = Object.keys(tokens);
             for (const s of allSlugs) {
                 if (s.includes(slug) || slug.includes(s)) {
@@ -117,6 +121,7 @@ function getEpisodeUrl(animeTitle: string, episodeId: string, animeId?: string):
     console.log(`🔍 Buscando manualmente por título...`);
     const clean = cleanTitle(animeTitle);
     
+    // Buscar en TODOS los slugs que contengan el título limpio
     const matchingSlugs: string[] = [];
     for (const slug of Object.keys(tokens)) {
         if (slug.includes(clean) || clean.includes(slug)) {
@@ -124,6 +129,7 @@ function getEpisodeUrl(animeTitle: string, episodeId: string, animeId?: string):
         }
     }
     
+    // Ordenar slugs por número (para que -part-2 venga después)
     matchingSlugs.sort((a, b) => {
         const numA = parseInt(a.match(/-(\d+)$/)?.[1] || '0');
         const numB = parseInt(b.match(/-(\d+)$/)?.[1] || '0');
@@ -132,6 +138,7 @@ function getEpisodeUrl(animeTitle: string, episodeId: string, animeId?: string):
     
     console.log(`📂 Slugs encontrados por coincidencia:`, matchingSlugs);
     
+    // Buscar en todos los slugs coincidentes
     for (const slug of matchingSlugs) {
         if (tokens[slug] && tokens[slug][episodeNum]) {
             console.log(`✅ Episodio encontrado en "${slug}"`);
@@ -140,6 +147,7 @@ function getEpisodeUrl(animeTitle: string, episodeId: string, animeId?: string):
     }
     
     console.log(`❌ No se encontró el episodio ${episodeNum} para "${animeTitle}"`);
+    console.log(`💡 Sugerencia: Verifica que el token exista en localStorage`);
     return null;
 }
 
@@ -293,6 +301,444 @@ function getKnownEpisodes(title: string): number {
 }
 
 // ============================================================
+// 📝 SISTEMA DE COMENTARIOS CON NOMBRE Y CORREO OBLIGATORIOS (CORREO OCULTO)
+// ============================================================
+
+interface Comment {
+    id: string;
+    username: string;
+    email: string; // Se guarda internamente pero NO se muestra
+    text: string;
+    timestamp: number;
+    likes: number;
+    replies: Comment[];
+}
+
+function getCommentsKey(animeId: string, episodeId: string): string {
+    return `comments_${animeId}_${episodeId}`;
+}
+
+function loadComments(animeId: string, episodeId: string): Comment[] {
+    try {
+        const key = getCommentsKey(animeId, episodeId);
+        const saved = localStorage.getItem(key);
+        if (saved) {
+            return JSON.parse(saved);
+        }
+    } catch (e) {
+        console.error('Error cargando comentarios:', e);
+    }
+    return [];
+}
+
+function saveComments(animeId: string, episodeId: string, comments: Comment[]): void {
+    try {
+        const key = getCommentsKey(animeId, episodeId);
+        localStorage.setItem(key, JSON.stringify(comments));
+    } catch (e) {
+        console.error('Error guardando comentarios:', e);
+    }
+}
+
+function formatTime(timestamp: number): string {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - timestamp) / 1000);
+    
+    if (diff < 60) return 'Ahora mismo';
+    if (diff < 3600) return `${Math.floor(diff / 60)}m`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
+    if (diff < 604800) return `${Math.floor(diff / 86400)}d`;
+    return date.toLocaleDateString('es-ES');
+}
+
+function isValidEmail(email: string): boolean {
+    const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return regex.test(email);
+}
+
+// ============================================================
+// 🔥 COMPONENTE DE COMENTARIOS CON VALIDACIÓN (CORREO OCULTO)
+// ============================================================
+
+function CommentsSection({ animeId, episodeId, animeTitle }: { animeId: string; episodeId: string; animeTitle: string }) {
+    const [comments, setComments] = useState<Comment[]>([]);
+    const [newComment, setNewComment] = useState('');
+    const [username, setUsername] = useState('');
+    const [email, setEmail] = useState('');
+    const [replyText, setReplyText] = useState('');
+    const [showReplyInput, setShowReplyInput] = useState<string | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [showLoginForm, setShowLoginForm] = useState(false);
+    const [usernameError, setUsernameError] = useState('');
+    const [emailError, setEmailError] = useState('');
+
+    // Cargar datos del usuario desde localStorage
+    useEffect(() => {
+        const savedUsername = localStorage.getItem('comment_username');
+        const savedEmail = localStorage.getItem('comment_email');
+        
+        if (savedUsername && savedEmail) {
+            setUsername(savedUsername);
+            setEmail(savedEmail);
+            setShowLoginForm(false);
+        } else {
+            setShowLoginForm(true);
+        }
+    }, []);
+
+    // Cargar comentarios
+    useEffect(() => {
+        const loaded = loadComments(animeId, episodeId);
+        setComments(loaded);
+        setIsLoading(false);
+    }, [animeId, episodeId]);
+
+    // Guardar comentarios cuando cambian
+    useEffect(() => {
+        if (!isLoading) {
+            saveComments(animeId, episodeId, comments);
+        }
+    }, [comments, animeId, episodeId, isLoading]);
+
+    const validateUser = (): boolean => {
+        let valid = true;
+        
+        if (!username.trim() || username.trim().length < 3) {
+            setUsernameError('El nombre debe tener al menos 3 caracteres');
+            valid = false;
+        } else {
+            setUsernameError('');
+        }
+        
+        if (!email.trim() || !isValidEmail(email.trim())) {
+            setEmailError('Ingresa un correo electrónico válido');
+            valid = false;
+        } else {
+            setEmailError('');
+        }
+        
+        return valid;
+    };
+
+    const handleLogin = () => {
+        if (validateUser()) {
+            localStorage.setItem('comment_username', username.trim());
+            localStorage.setItem('comment_email', email.trim());
+            setShowLoginForm(false);
+        }
+    };
+
+    const handleAddComment = () => {
+        if (!username.trim() || !email.trim()) {
+            setShowLoginForm(true);
+            return;
+        }
+        
+        if (!newComment.trim()) return;
+
+        const comment: Comment = {
+            id: `c_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            username: username.trim(),
+            email: email.trim(),
+            text: newComment.trim(),
+            timestamp: Date.now(),
+            likes: 0,
+            replies: [],
+        };
+
+        setComments([comment, ...comments]);
+        setNewComment('');
+    };
+
+    const handleAddReply = (parentId: string) => {
+        if (!username.trim() || !email.trim()) {
+            setShowLoginForm(true);
+            return;
+        }
+        
+        if (!replyText.trim()) return;
+
+        const reply: Comment = {
+            id: `r_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            username: username.trim(),
+            email: email.trim(),
+            text: replyText.trim(),
+            timestamp: Date.now(),
+            likes: 0,
+            replies: [],
+        };
+
+        const updatedComments = comments.map(c => {
+            if (c.id === parentId) {
+                return { ...c, replies: [...c.replies, reply] };
+            }
+            return c;
+        });
+
+        setComments(updatedComments);
+        setReplyText('');
+        setShowReplyInput(null);
+    };
+
+    const handleLike = (commentId: string) => {
+        const updatedComments = comments.map(c => {
+            if (c.id === commentId) {
+                return { ...c, likes: c.likes + 1 };
+            }
+            const updatedReplies = c.replies.map(r => {
+                if (r.id === commentId) {
+                    return { ...r, likes: r.likes + 1 };
+                }
+                return r;
+            });
+            return { ...c, replies: updatedReplies };
+        });
+        setComments(updatedComments);
+    };
+
+    const handleDeleteComment = (commentId: string) => {
+        if (!confirm('¿Eliminar este comentario?')) return;
+        const updatedComments = comments.filter(c => c.id !== commentId);
+        setComments(updatedComments);
+    };
+
+    // ============================================================
+    // 📝 COMPONENTE DE COMENTARIO - SIN MOSTRAR CORREO
+    // ============================================================
+    const CommentItem = ({ comment, isReply = false }: { comment: Comment; isReply?: boolean }) => {
+        // El correo NO se muestra, solo se guarda internamente
+
+        return (
+            <div className={`${isReply ? 'ml-8 mt-3' : 'mt-4'} bg-gray-800/50 rounded-lg p-4 border border-gray-700/50`}>
+                <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-full bg-blue-600/30 flex items-center justify-center text-blue-400 font-bold text-sm">
+                            {comment.username.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                            <span className="font-semibold text-sm text-white">{comment.username}</span>
+                            <span className="text-xs text-gray-400 ml-2">• {formatTime(comment.timestamp)}</span>
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => handleDeleteComment(comment.id)}
+                        className="text-gray-500 hover:text-red-400 text-xs transition"
+                        title="Eliminar"
+                    >
+                        🗑️
+                    </button>
+                </div>
+                <p className="text-gray-300 text-sm mt-2 leading-relaxed whitespace-pre-wrap break-words">
+                    {comment.text}
+                </p>
+                <div className="flex items-center gap-4 mt-2">
+                    <button
+                        onClick={() => handleLike(comment.id)}
+                        className="flex items-center gap-1 text-xs text-gray-400 hover:text-blue-400 transition"
+                    >
+                        ❤️ {comment.likes > 0 && <span>{comment.likes}</span>}
+                    </button>
+                    {!isReply && (
+                        <button
+                            onClick={() => setShowReplyInput(showReplyInput === comment.id ? null : comment.id)}
+                            className="text-xs text-gray-400 hover:text-blue-400 transition"
+                        >
+                            💬 Responder
+                        </button>
+                    )}
+                </div>
+                {showReplyInput === comment.id && !isReply && (
+                    <div className="mt-3 flex gap-2">
+                        <input
+                            type="text"
+                            value={replyText}
+                            onChange={(e) => setReplyText(e.target.value)}
+                            placeholder="Escribe una respuesta..."
+                            className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    handleAddReply(comment.id);
+                                }
+                            }}
+                        />
+                        <button
+                            onClick={() => handleAddReply(comment.id)}
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm text-white transition"
+                        >
+                            Responder
+                        </button>
+                    </div>
+                )}
+                {comment.replies && comment.replies.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                        {comment.replies.map((reply) => (
+                            <CommentItem key={reply.id} comment={reply} isReply={true} />
+                        ))}
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    // ============================================================
+    // FORMULARIO DE LOGIN (Nombre + Correo)
+    // ============================================================
+    if (showLoginForm) {
+        return (
+            <div className="mt-8" id="comments">
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-xl font-bold flex items-center gap-2">
+                        💬 Comentarios
+                        <span className="text-sm text-gray-400 font-normal">
+                            ({comments.length})
+                        </span>
+                    </h3>
+                </div>
+                
+                <div className="bg-gray-800/50 rounded-lg p-6 border border-gray-700/50">
+                    <h4 className="text-lg font-semibold text-white mb-2">👋 Inicia sesión para comentar</h4>
+                    <p className="text-sm text-gray-400 mb-4">
+                        Ingresa tu nombre y correo electrónico para participar en la conversación.
+                        <br />
+                        <span className="text-xs text-gray-500">Tu correo no será mostrado públicamente.</span>
+                    </p>
+                    
+                    <div className="space-y-3">
+                        <div>
+                            <label className="block text-sm text-gray-300 mb-1">
+                                Nombre de usuario <span className="text-red-400">*</span>
+                            </label>
+                            <input
+                                type="text"
+                                value={username}
+                                onChange={(e) => setUsername(e.target.value)}
+                                placeholder="Ej: Juan Perez"
+                                className={`w-full px-4 py-2 bg-gray-700 border ${usernameError ? 'border-red-500' : 'border-gray-600'} rounded-lg text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                            />
+                            {usernameError && (
+                                <p className="text-red-400 text-xs mt-1">{usernameError}</p>
+                            )}
+                        </div>
+                        
+                        <div>
+                            <label className="block text-sm text-gray-300 mb-1">
+                                Correo electrónico <span className="text-red-400">*</span>
+                            </label>
+                            <input
+                                type="email"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                placeholder="ejemplo@correo.com"
+                                className={`w-full px-4 py-2 bg-gray-700 border ${emailError ? 'border-red-500' : 'border-gray-600'} rounded-lg text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                            />
+                            {emailError && (
+                                <p className="text-red-400 text-xs mt-1">{emailError}</p>
+                            )}
+                            <p className="text-xs text-gray-500 mt-1">🔒 Tu correo no será mostrado públicamente.</p>
+                        </div>
+                        
+                        <button
+                            onClick={handleLogin}
+                            className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm text-white font-medium transition"
+                        >
+                            Continuar para comentar
+                        </button>
+                    </div>
+                    
+                    {comments.length > 0 && (
+                        <div className="mt-4 pt-4 border-t border-gray-700">
+                            <p className="text-xs text-gray-500">
+                                📚 {comments.length} comentario{comments.length !== 1 ? 's' : ''} disponibles. 
+                                Inicia sesión para verlos y participar.
+                            </p>
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    }
+
+    // ============================================================
+    // SECCIÓN DE COMENTARIOS (Usuario logueado)
+    // ============================================================
+    return (
+        <div className="mt-8" id="comments">
+            <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-bold flex items-center gap-2">
+                    💬 Comentarios
+                    <span className="text-sm text-gray-400 font-normal">
+                        ({comments.length})
+                    </span>
+                </h3>
+                <button
+                    onClick={() => {
+                        localStorage.removeItem('comment_username');
+                        localStorage.removeItem('comment_email');
+                        setShowLoginForm(true);
+                    }}
+                    className="text-xs text-gray-500 hover:text-blue-400 transition"
+                >
+                    🔄 Cambiar usuario
+                </button>
+            </div>
+
+            {/* Input de comentario */}
+            <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700/50">
+                <div className="flex items-center gap-2 mb-2">
+                    <div className="w-8 h-8 rounded-full bg-blue-600/30 flex items-center justify-center text-blue-400 font-bold text-sm flex-shrink-0">
+                        {username.charAt(0).toUpperCase()}
+                    </div>
+                    <span className="text-sm text-gray-400">
+                        Comentando como <span className="text-white font-medium">{username}</span>
+                    </span>
+                </div>
+                <div className="flex gap-2">
+                    <input
+                        id="comment-input"
+                        type="text"
+                        value={newComment}
+                        onChange={(e) => setNewComment(e.target.value)}
+                        placeholder={`Comenta sobre el episodio ${episodeId}...`}
+                        className="flex-1 px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                handleAddComment();
+                            }
+                        }}
+                    />
+                    <button
+                        onClick={handleAddComment}
+                        disabled={!newComment.trim()}
+                        className="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm text-white font-medium transition"
+                    >
+                        Enviar
+                    </button>
+                </div>
+            </div>
+
+            {/* Lista de comentarios */}
+            {isLoading ? (
+                <div className="text-center py-8 text-gray-400 text-sm">
+                    Cargando comentarios...
+                </div>
+            ) : comments.length === 0 ? (
+                <div className="text-center py-8 text-gray-400 text-sm border border-dashed border-gray-700 rounded-lg">
+                    💭 No hay comentarios aún. ¡Sé el primero en comentar!
+                </div>
+            ) : (
+                <div className="mt-4 space-y-2 max-h-[600px] overflow-y-auto pr-2">
+                    {comments.map((comment) => (
+                        <CommentItem key={comment.id} comment={comment} />
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ============================================================
 // COMPONENTE PRINCIPAL
 // ============================================================
 
@@ -303,7 +749,6 @@ export const Route = createFileRoute('/ver/$id/$episodeId')({
 function WatchComponent() {
     const { id, episodeId } = Route.useParams()
     const navigate = useNavigate()
-    const router = useRouter()
     const [loading, setLoading] = useState(true)
     const [anime, setAnime] = useState<any>(null)
     const [error, setError] = useState<string | null>(null)
@@ -385,6 +830,10 @@ function WatchComponent() {
                 console.log('✅ Anime cargado:', info.title.english || info.title.romaji);
                 console.log('📌 ID de AniList:', info.id);
                 
+                if (info.id !== Number(id)) {
+                    console.warn(`⚠️ El ID devuelto (${info.id}) no coincide con el solicitado (${id})`);
+                }
+                
                 const animeData = {
                     id: info.id,
                     title: info.title.english || info.title.romaji || info.title.native || 'Sin título',
@@ -444,7 +893,7 @@ function WatchComponent() {
         loadAnime();
     }, [id]);
 
-    // 🔥 EFECTO PRINCIPAL: Buscar el token para el episodio
+    // Buscar el token para el episodio (se ejecuta cuando cambia episodeId O anime)
     useEffect(() => {
         if (previousEpisodeId.current !== episodeId) {
             console.log(`🔄 EpisodeId cambió de ${previousEpisodeId.current} a ${episodeId}`);
@@ -529,21 +978,19 @@ function WatchComponent() {
     };
 
     // ============================================================
-    // 🔥 FUNCIÓN DE PAGINACIÓN CORREGIDA
+    // FUNCIÓN DE PAGINACIÓN
     // ============================================================
     
+    // Calcular startEpisode para la paginación (fuera del render para que esté disponible)
+    let startEpisode = 1;
+    for (let i = 0; i < selectedSeason; i++) {
+        startEpisode += (seasons[i]?.episodeCount || 0);
+    }
+    
     const changePage = (page: number) => {
-        // 🔥 Calcular startEpisode en el momento basado en selectedSeason
-        let currentStartEpisode = 1;
-        for (let i = 0; i < selectedSeason; i++) {
-            currentStartEpisode += (seasons[i]?.episodeCount || 0);
-        }
-        
         // Calcular el primer episodio de la página
         const startIndex = (page - 1) * EPISODES_PER_PAGE;
-        const firstEpisode = currentStartEpisode + startIndex;
-        
-        console.log(`📄 Página ${page}: startEpisode=${currentStartEpisode}, firstEpisode=${firstEpisode}, totalEpisodes=${totalEpisodes}`);
+        const firstEpisode = startEpisode + startIndex;
         
         // Navegar al primer episodio de la página
         if (firstEpisode <= totalEpisodes) {
@@ -612,12 +1059,6 @@ function WatchComponent() {
                 </div>
             </div>
         )
-    }
-
-    // Calcular startEpisode para el renderizado
-    let startEpisode = 1;
-    for (let i = 0; i < selectedSeason; i++) {
-        startEpisode += (seasons[i]?.episodeCount || 0);
     }
 
     const currentSeason = seasons[selectedSeason];
@@ -817,6 +1258,15 @@ function WatchComponent() {
                     </p>
                 )}
             </div>
+
+            {/* ============================================================ */}
+            {/* 📝 SECCIÓN DE COMENTARIOS - SIN CORREO VISIBLE */}
+            {/* ============================================================ */}
+            <CommentsSection 
+                animeId={id} 
+                episodeId={episodeId} 
+                animeTitle={anime?.title || 'Anime'} 
+            />
         </div>
     )
 }
