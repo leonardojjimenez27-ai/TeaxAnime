@@ -72,27 +72,14 @@ export function removeSeasonNumber(title: string): string {
 // ============================================================
 
 export const TITLE_MAPPINGS: Record<string, string> = {
+    // Español → Inglés
     'ataque a los titanes': 'attack on titan',
     'shingeki no kyojin': 'attack on titan',
     'jujutsu kaisen': 'jujutsu kaisen',
-    'jujutsu kaisen temporada 2': 'jujutsu kaisen season 2',
-    'jujutsu kaisen 2': 'jujutsu kaisen season 2',
     'mushoku tensei': 'mushoku tensei jobless reincarnation',
-    'mushoku tensei temporada 2': 'mushoku tensei season 2',
-    'mushoku tensei 2': 'mushoku tensei season 2',
-    'mushoku tensei temporada 3': 'mushoku tensei season 3',
-    'mushoku tensei 3': 'mushoku tensei season 3',
     'solo leveling': 'solo leveling',
-    'solo leveling temporada 2': 'solo leveling season 2',
-    'solo leveling 2': 'solo leveling season 2',
     'kaiju no 8': 'kaiju no 8',
-    'kaiju no 8 temporada 2': 'kaiju no 8 season 2',
-    'kaiju no 8 2': 'kaiju no 8 season 2',
     'one punch man': 'one punch man',
-    'one punch man temporada 2': 'one punch man season 2',
-    'one punch man 2': 'one punch man season 2',
-    'one punch man temporada 3': 'one punch man season 3',
-    'one punch man 3': 'one punch man season 3',
     'fullmetal alchemist': 'fullmetal alchemist',
     'fullmetal alchemist brotherhood': 'fullmetal alchemist brotherhood',
     'fullmetal alquimista': 'fullmetal alchemist',
@@ -106,9 +93,6 @@ export const TITLE_MAPPINGS: Record<string, string> = {
     'tokyo ghoul': 'tokyo ghoul',
     'spy x family': 'spy x family',
     'sword art online': 'sword art online',
-    'sword art online ii': 'sword art online ii',
-    'sword art online alicization': 'sword art online alicization',
-    'sword art online war of underworld': 'sword art online war of underworld',
     'hunter x hunter': 'hunter x hunter',
     'bleach': 'bleach',
     'one piece': 'one piece',
@@ -121,8 +105,8 @@ export const TITLE_MAPPINGS: Record<string, string> = {
     'dragon ball daima': 'dragon ball daima',
     'dragon ball heroes': 'dragon ball heroes',
     'fairy tail': 'fairy tail',
-    'fairy tail 2014': 'fairy tail 2014',
-    'fairy tail final series': 'fairy tail final series',
+    'demon slayer': 'demon slayer',
+    'kimetsu no yaiba': 'demon slayer',
 };
 
 export function getNormalizedTitle(title: string, forAniList: boolean = false): string {
@@ -335,7 +319,7 @@ export const ANILIST_ID_TO_SLUG: Record<string, {
     },
     
     // ============================================================
-    // SWORD ART ONLINE - TODAS LAS TEMPORADAS
+    // SWORD ART ONLINE
     // ============================================================
     '11757': { 
         slug: 'sword-art-online', 
@@ -572,6 +556,40 @@ export const ANILIST_ID_TO_SLUG: Record<string, {
         season: 3, 
         totalEpisodes: 51,
         title: 'Fairy Tail Final Series'
+    },
+    
+    // ============================================================
+    // DEMON SLAYER (KIMETSU NO YAIBA) - TODAS LAS TEMPORADAS
+    // ============================================================
+    '101922': { 
+    slug: 'kimetsu-no-yaiba', 
+    season: 1, 
+    totalEpisodes: 26,
+    title: 'Demon Slayer: Kimetsu no Yaiba'
+    },
+    '129874': { 
+    slug: 'kimetsu-no-yaiba-mugen-ressha-hen', 
+    season: 2, 
+    totalEpisodes: 7,
+    title: 'Demon Slayer: Mugen Train Arc'
+    },
+    '142329': { 
+    slug: 'kimetsu-no-yaiba-yuukaku-hen', 
+    season: 3, 
+    totalEpisodes: 11,
+    title: 'Demon Slayer: Entertainment District Arc'
+    },
+    '145139': { 
+    slug: 'kimetsu-no-yaiba-katanakaji-no-sato-hen', 
+    season: 4, 
+    totalEpisodes: 11,
+    title: 'Demon Slayer: Swordsmith Village Arc'
+    },
+    '166240': { 
+    slug: 'kimetsu-no-yaiba-hashira-geiko-hen', 
+    season: 5, 
+    totalEpisodes: 8,
+    title: 'Demon Slayer: Hashira Training Arc'
     },
 };
 
